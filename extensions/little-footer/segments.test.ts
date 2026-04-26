@@ -146,7 +146,7 @@ describe("renderGit", () => {
   it("renders dirty indicator when dirty (nerd)", () => {
     const nerdIcons = iconsFor(true);
     const result = renderGit(fakeTheme, nerdIcons, "main", true);
-    expect(result).toContain("<error>●</error>");
+    expect(result).toContain("<error>!</error>");
   });
 
   it("renders diff counts when dirty", () => {

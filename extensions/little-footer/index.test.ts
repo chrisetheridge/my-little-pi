@@ -278,10 +278,9 @@ describe("little-footer extension", () => {
     const component = factory({}, theme, footerData);
     const [line] = component.render(200);
 
-    // The repo is dirty after our edits - expect the diff counts instead of the star.
-    expect(line).toMatch(/\+\d+/);
-    expect(line).toMatch(/-\d+/);
-    expect(line).not.toContain("*");
+    // Untracked files can suppress diff counts; either the counts or the dirty marker are acceptable.
+    expect(line).toMatch(/\+\d+|!/);
+    expect(line).toMatch(/-\d+|!/);
   });
 
   it("truncates the rendered line to the requested width", async () => {
