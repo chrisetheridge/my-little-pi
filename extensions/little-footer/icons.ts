@@ -22,11 +22,11 @@ const NERD_ICONS: IconSet = {
   thinking: "?",
   path: "dir",
   git: "git",
-  dirty: "\u25cf",
+  dirty: "!",
   tokens: "tok",
   cost: "$",
   context: "◫",
-  time: "\uD83D\uDD50",
+  time: ">",
   separator: "|",
 };
 
