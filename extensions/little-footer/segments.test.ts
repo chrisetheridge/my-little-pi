@@ -130,6 +130,39 @@ describe("renderGit", () => {
     const result = renderGit(fakeTheme, icons, "main");
     expect(result).toContain("<success>main</success>");
   });
+
+  it("renders without dirty indicator when not dirty", () => {
+    const result = renderGit(fakeTheme, icons, "main", false);
+    expect(result).not.toContain("●");
+    expect(result).not.toContain("*");
+  });
+
+  it("renders dirty indicator when dirty (ascii)", () => {
+    const result = renderGit(fakeTheme, icons, "main", true);
+    expect(result).toContain("<error>*</error>");
+    expect(result).not.toContain("●");
+  });
+
+  it("renders dirty indicator when dirty (nerd)", () => {
+    const nerdIcons = iconsFor(true);
+    const result = renderGit(fakeTheme, nerdIcons, "main", true);
+    expect(result).toContain("<error>●</error>");
+  });
+
+  it("renders diff counts when dirty", () => {
+    const result = renderGit(fakeTheme, icons, "main", true, {
+      added: 12,
+      deleted: 3,
+    });
+    expect(result).toContain("<success>+12</success>");
+    expect(result).toContain("<error>-3</error>");
+    expect(result).not.toContain("<error>*</error>");
+  });
+
+  it("falls back to dirty marker when diff counts are absent", () => {
+    const result = renderGit(fakeTheme, icons, "main", true, null);
+    expect(result).toContain("<error>*</error>");
+  });
 });
 
 describe("renderTokens", () => {

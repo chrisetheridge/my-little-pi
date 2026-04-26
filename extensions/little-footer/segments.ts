@@ -16,6 +16,11 @@ export interface ContextSegmentInput {
   contextWindow: number | null;
 }
 
+export interface GitDiffStats {
+  added: number;
+  deleted: number;
+}
+
 /** Thinking level display labels. */
 const THINKING_LABELS: Record<string, string> = {
   off: "off",
@@ -75,14 +80,33 @@ export function renderPath(
   return `${theme.fg("text", icons.path)} ${theme.fg("text", basename)}`;
 }
 
-/** Render git branch segment. Returns null if branch is null. */
+/** Render git branch segment. Returns null if branch is null.
+ * When dirty is true, appends a * indicator after the branch name.
+ */
 export function renderGit(
   theme: ThemeFn,
   icons: IconSet,
   branch: string | null,
+  dirty?: boolean,
+  diffStats?: GitDiffStats | null,
 ): string | null {
   if (branch === null || branch === "") return null;
-  return `${theme.fg("success", icons.git)} ${theme.fg("success", branch)}`;
+  let suffix = "";
+  if (dirty) {
+    if (diffStats && (diffStats.added > 0 || diffStats.deleted > 0)) {
+      const parts: string[] = [];
+      if (diffStats.added > 0) {
+        parts.push(theme.fg("success", `+${diffStats.added}`));
+      }
+      if (diffStats.deleted > 0) {
+        parts.push(theme.fg("error", `-${diffStats.deleted}`));
+      }
+      suffix = ` ${parts.join(" ")}`;
+    } else {
+      suffix = ` ${theme.fg("error", icons.dirty)}`;
+    }
+  }
+  return `${theme.fg("success", icons.git)} ${theme.fg("success", branch)}${suffix}`;
 }
 
 /** Render token count segment. Returns null for zero tokens. */

@@ -2,6 +2,8 @@
  * little-footer: a compact single-line status footer for Pi.
  */
 
+import { spawnSync } from "node:child_process";
+
 import type {
   ExtensionAPI,
   ExtensionContext,
@@ -21,6 +23,7 @@ import {
   renderThinking,
   renderTime,
   renderTokens,
+  type GitDiffStats,
   type ThemeFn,
 } from "./segments.ts";
 
@@ -28,6 +31,72 @@ interface UsageTotals {
   input: number;
   output: number;
   cost: number;
+}
+
+/** Check if the git working directory has uncommitted changes.
+ * Returns true when there are staged or unstaged modifications, new files, etc.
+ */
+function isGitDirty(cwd: string): boolean {
+  try {
+    const result = spawnSync("git", ["status", "--porcelain"], {
+      cwd,
+      timeout: 2000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    if (result.status !== 0) return false;
+    const output = result.stdout?.toString() ?? "";
+    // Any non-empty output means dirty
+    return output.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Collect added/deleted line counts for the current git diff. */
+function collectGitDiffStats(cwd: string): GitDiffStats | null {
+  const parseNumstat = (output: string): GitDiffStats | null => {
+    let added = 0;
+    let deleted = 0;
+
+    for (const line of output.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const [addedText, deletedText] = trimmed.split(/\s+/, 3);
+      const parsedAdded = Number.parseInt(addedText ?? "", 10);
+      const parsedDeleted = Number.parseInt(deletedText ?? "", 10);
+      if (!Number.isFinite(parsedAdded) || !Number.isFinite(parsedDeleted)) continue;
+      added += parsedAdded;
+      deleted += parsedDeleted;
+    }
+
+    return added > 0 || deleted > 0 ? { added, deleted } : null;
+  };
+
+  const runNumstat = (args: string[]): GitDiffStats | null => {
+    const result = spawnSync("git", args, {
+      cwd,
+      timeout: 2000,
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+    if (result.status !== 0) return null;
+    return parseNumstat(result.stdout?.toString() ?? "");
+  };
+
+  try {
+    const headStats = runNumstat(["diff", "--numstat", "--no-renames", "HEAD", "--"]);
+    if (headStats) return headStats;
+
+    const stagedStats = runNumstat(["diff", "--cached", "--numstat", "--no-renames", "--"]);
+    const unstagedStats = runNumstat(["diff", "--numstat", "--no-renames", "--"]);
+    if (!stagedStats && !unstagedStats) return null;
+
+    return {
+      added: (stagedStats?.added ?? 0) + (unstagedStats?.added ?? 0),
+      deleted: (stagedStats?.deleted ?? 0) + (unstagedStats?.deleted ?? 0),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Collect cumulative token usage and cost from assistant messages in the session. */
@@ -74,6 +143,8 @@ function buildLine(
 
   // Read git branch
   const branch = footerData.getGitBranch();
+  const gitDirty = isGitDirty(ctx.cwd);
+  const gitDiff = gitDirty ? collectGitDiffStats(ctx.cwd) : null;
 
   // Read context usage
   const contextUsage = ctx.getContextUsage();
@@ -86,7 +157,7 @@ function buildLine(
   const thinkingSegment = renderThinking(theme, icons, thinkingLevel);
   if (thinkingSegment) leftSegments.push(thinkingSegment);
   leftSegments.push(renderPath(theme, icons, ctx.cwd));
-  const gitSegment = renderGit(theme, icons, branch);
+  const gitSegment = renderGit(theme, icons, branch, gitDirty, gitDiff);
   if (gitSegment) leftSegments.push(gitSegment);
 
   // Build right segments
@@ -147,23 +218,54 @@ function buildLine(
   return truncateToWidth(fullLine, width);
 }
 
+/** Poll interval for dirty state updates (in ms). */
+const DIRTY_POLL_MS = 2000;
+
 /** Activate the footer for the given context. */
 function activateFooter(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
   icons: IconSet,
 ): void {
+  let invalidateRef: (() => void) | undefined;
+  let lastGitState = JSON.stringify({
+    dirty: isGitDirty(ctx.cwd),
+    diff: collectGitDiffStats(ctx.cwd),
+  });
+  let timer: ReturnType<typeof setInterval> | null = null;
+
   ctx.ui.setFooter((_tui, theme, footerData) => {
     const themeFn: ThemeFn = {
       fg: (role, text) => theme.fg(role, text),
     };
-    return {
-      invalidate() {},
+    const component = {
+      invalidate() {
+        invalidateRef = () => component.invalidate();
+      },
       render(width: number): string[] {
         return [buildLine(themeFn, icons, ctx, pi, footerData, width)];
       },
+      dispose() {
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      },
     };
+    return component;
   });
+
+  // Poll for dirty state changes continuously
+  timer = setInterval(() => {
+    const currentGitState = JSON.stringify({
+      dirty: isGitDirty(ctx.cwd),
+      diff: collectGitDiffStats(ctx.cwd),
+    });
+    if (currentGitState !== lastGitState) {
+      lastGitState = currentGitState;
+      invalidateRef?.();
+    }
+  }, DIRTY_POLL_MS);
 }
 
 /** Default export - the extension factory. */

@@ -250,6 +250,40 @@ describe("little-footer extension", () => {
     expect(visibleWidth(line)).toBeLessThanOrEqual(200);
   });
 
+  it("shows dirty indicator when git repo has uncommitted changes", async () => {
+    const { handlers } = await loadExtension({
+      LITTLE_FOOTER_NERD_FONTS: "0",
+    });
+    const ctx = createCtx({
+      cwd: "/Users/chrise/code/private/my-little-pi",
+      getContextUsage: () => undefined,
+      sessionManager: { getBranch: () => [] },
+    });
+    const footerData: FakeFooterData = {
+      getGitBranch: () => "main",
+      getExtensionStatuses: () => new Map(),
+    };
+
+    await handlers.get("session_start")?.({}, ctx);
+
+    const factory = ctx.ui.setFooter.mock.calls[0][0] as (
+      tui: unknown,
+      theme: { fg: (role: string, text: string) => string },
+      footerData: FakeFooterData,
+    ) => { render: (width: number) => string[] };
+
+    const theme = {
+      fg: (_role: string, text: string) => `\u001b[32m${text}\u001b[0m`,
+    };
+    const component = factory({}, theme, footerData);
+    const [line] = component.render(200);
+
+    // The repo is dirty after our edits - expect the diff counts instead of the star.
+    expect(line).toMatch(/\+\d+/);
+    expect(line).toMatch(/-\d+/);
+    expect(line).not.toContain("*");
+  });
+
   it("truncates the rendered line to the requested width", async () => {
     const { handlers } = await loadExtension({
       LITTLE_FOOTER_NERD_FONTS: "0",
@@ -291,6 +325,33 @@ describe("little-footer extension", () => {
     const [line] = component.render(40);
 
     expect(visibleWidth(line)).toBeLessThanOrEqual(40);
+  });
+
+  it("keeps invalidate usable even when called detached from the component", async () => {
+    const { handlers } = await loadExtension({
+      LITTLE_FOOTER_NERD_FONTS: "0",
+    });
+    const ctx = createCtx();
+
+    await handlers.get("session_start")?.({}, ctx);
+
+    const factory = ctx.ui.setFooter.mock.calls[0][0] as (
+      tui: unknown,
+      theme: { fg: (role: string, text: string) => string },
+      footerData: FakeFooterData,
+    ) => { invalidate: () => void };
+
+    const component = factory(
+      {},
+      { fg: (_role: string, text: string) => text },
+      {
+        getGitBranch: () => null,
+        getExtensionStatuses: () => new Map(),
+      },
+    );
+
+    const { invalidate } = component;
+    expect(() => invalidate()).not.toThrow();
   });
 
   it("warns on unknown subcommands", async () => {

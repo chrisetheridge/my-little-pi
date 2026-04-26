@@ -8,6 +8,7 @@ export interface IconSet {
   thinking: string;
   path: string;
   git: string;
+  dirty: string;
   tokens: string;
   cost: string;
   context: string;
@@ -21,10 +22,11 @@ const NERD_ICONS: IconSet = {
   thinking: "?",
   path: "dir",
   git: "git",
+  dirty: "\u25cf",
   tokens: "tok",
   cost: "$",
   context: "◫",
-  time: "🕐",
+  time: "\uD83D\uDD50",
   separator: "|",
 };
 
@@ -34,6 +36,7 @@ const ASCII_ICONS: IconSet = {
   thinking: "think",
   path: "dir",
   git: "git",
+  dirty: "*",
   tokens: "tok",
   cost: "$",
   context: "ctx",
