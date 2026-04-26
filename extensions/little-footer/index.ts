@@ -1,0 +1,213 @@
+/**
+ * little-footer: a compact single-line status footer for Pi.
+ */
+
+import type {
+  ExtensionAPI,
+  ExtensionContext,
+  ReadonlyFooterDataProvider,
+} from "@mariozechner/pi-coding-agent";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { detectNerdFonts, iconsFor, type IconSet } from "./icons.ts";
+import {
+  renderContext,
+  renderCost,
+  renderExtensionStatus,
+  renderGit,
+  renderModel,
+  renderPath,
+  renderPi,
+  renderThinking,
+  renderTime,
+  renderTokens,
+  type ThemeFn,
+} from "./segments.ts";
+
+interface UsageTotals {
+  input: number;
+  output: number;
+  cost: number;
+}
+
+/** Collect cumulative token usage and cost from assistant messages in the session. */
+function collectUsage(ctx: ExtensionContext): UsageTotals {
+  const totals: UsageTotals = { input: 0, output: 0, cost: 0 };
+  try {
+    const branch = ctx.sessionManager.getBranch();
+    if (!branch) return totals;
+
+    for (const entry of branch) {
+      if (entry.type !== "message") continue;
+      const msg = entry.message as AgentMessage & { usage?: { input?: number; output?: number; cost?: { total?: number } } };
+      if (msg.role !== "assistant") continue;
+
+      const usage = msg.usage;
+      if (!usage) continue;
+      totals.input += usage.input ?? 0;
+      totals.output += usage.output ?? 0;
+      totals.cost += usage.cost?.total ?? 0;
+    }
+  } catch {
+    // Defensive: ignore errors from session iteration
+  }
+  return totals;
+}
+
+/** Build a single footer line. */
+function buildLine(
+  theme: ThemeFn,
+  icons: IconSet,
+  ctx: ExtensionContext,
+  pi: ExtensionAPI,
+  footerData: ReadonlyFooterDataProvider,
+  width: number,
+): string {
+  if (width <= 0) return "";
+
+  // Collect usage totals
+  const usage = collectUsage(ctx);
+  const totalTokens = usage.input + usage.output;
+
+  // Read thinking level
+  const thinkingLevel = pi.getThinkingLevel();
+
+  // Read git branch
+  const branch = footerData.getGitBranch();
+
+  // Read context usage
+  const contextUsage = ctx.getContextUsage();
+
+  // Build left segments
+  const leftSegments: string[] = [];
+  leftSegments.push(renderPi(theme, icons));
+  const modelSegment = renderModel(theme, icons, ctx.model?.id);
+  if (modelSegment) leftSegments.push(modelSegment);
+  const thinkingSegment = renderThinking(theme, icons, thinkingLevel);
+  if (thinkingSegment) leftSegments.push(thinkingSegment);
+  leftSegments.push(renderPath(theme, icons, ctx.cwd));
+  const gitSegment = renderGit(theme, icons, branch);
+  if (gitSegment) leftSegments.push(gitSegment);
+
+  // Build right segments
+  const rightSegments: string[] = [];
+  const tokensSegment = renderTokens(theme, icons, totalTokens);
+  if (tokensSegment) rightSegments.push(tokensSegment);
+  const costSegment = renderCost(theme, icons, usage.cost);
+  if (costSegment) rightSegments.push(costSegment);
+
+  // Context segment
+  if (contextUsage) {
+    const contextInput = {
+      percent: contextUsage.percent,
+      contextWindow: contextUsage.contextWindow ?? null,
+    };
+    const contextSegment = renderContext(theme, icons, contextInput);
+    if (contextSegment) rightSegments.push(contextSegment);
+  }
+
+  // Extension statuses from footerData
+  try {
+    const statuses = footerData.getExtensionStatuses();
+    for (const [key, value] of statuses) {
+      if (value && value.trim()) {
+        rightSegments.push(renderExtensionStatus(theme, value));
+      }
+    }
+  } catch {
+    // Defensive: ignore errors reading statuses
+  }
+
+  // Time segment (far right)
+  rightSegments.push(renderTime(theme, icons));
+
+  const sep = ` ${theme.fg("border", icons.separator)} `;
+
+  // Filter nulls (shouldn't happen but be safe)
+  const leftFiltered = leftSegments.filter(Boolean);
+  const rightFiltered = rightSegments.filter(Boolean);
+
+  if (rightFiltered.length === 0) {
+    return truncateToWidth(leftFiltered.join(sep), width);
+  }
+
+  // Compute padding between left and right sides
+  const leftText = leftFiltered.join(sep);
+  const rightText = rightFiltered.join(sep);
+  const usedWidth = visibleWidth(leftText) + visibleWidth(sep) + visibleWidth(rightText);
+  const minPadding = Math.max(1, width - usedWidth);
+
+  if (minPadding <= 0) {
+    // Not enough room for padding; just truncate the combined line
+    return truncateToWidth(leftText + rightText, width);
+  }
+
+  const padding = " ".repeat(minPadding);
+  const fullLine = leftText + padding + sep + rightText;
+  return truncateToWidth(fullLine, width);
+}
+
+/** Activate the footer for the given context. */
+function activateFooter(
+  ctx: ExtensionContext,
+  pi: ExtensionAPI,
+  icons: IconSet,
+): void {
+  ctx.ui.setFooter((_tui, theme, footerData) => {
+    const themeFn: ThemeFn = {
+      fg: (role, text) => theme.fg(role, text),
+    };
+    return {
+      invalidate() {},
+      render(width: number): string[] {
+        return [buildLine(themeFn, icons, ctx, pi, footerData, width)];
+      },
+    };
+  });
+}
+
+/** Default export - the extension factory. */
+export default function littleFooterExtension(pi: ExtensionAPI): void {
+  const useNerd = detectNerdFonts();
+  const icons = iconsFor(useNerd);
+  let enabled = true;
+  let activeCtx: ExtensionContext | undefined;
+
+  pi.on("session_start", (_event, ctx) => {
+    activeCtx = ctx;
+    if (enabled) {
+      activateFooter(ctx, pi, icons);
+    }
+  });
+
+  pi.registerCommand("footer", {
+    description: "Toggle little-footer. Usage: /footer [on|off|status].",
+    getArgumentCompletions: (prefix: string) => {
+      const items = ["on", "off", "status"];
+      const lower = prefix.toLowerCase();
+      const matches = items
+        .filter((value) => value.startsWith(lower))
+        .map((value) => ({ value, label: value }));
+      return matches.length > 0 ? matches : null;
+    },
+    handler: async (args: string, ctx: ExtensionContext) => {
+      const sub = args.trim().toLowerCase() || "status";
+      const iconMode = useNerd ? "nerd icons" : "ascii icons";
+
+      if (sub === "status") {
+        ctx.ui.notify(`little-footer: ${enabled ? "on" : "off"} (${iconMode})`, "info");
+      } else if (sub === "on") {
+        enabled = true;
+        activeCtx = ctx;
+        activateFooter(ctx, pi, icons);
+        ctx.ui.notify("little-footer: on", "info");
+      } else if (sub === "off") {
+        enabled = false;
+        ctx.ui.setFooter(undefined);
+        ctx.ui.notify("little-footer: off (default footer restored)", "info");
+      } else {
+        ctx.ui.notify(`little-footer: unknown subcommand "${sub}". Use on|off|status.`, "warning");
+      }
+    },
+  });
+}

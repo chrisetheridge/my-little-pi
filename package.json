@@ -13,6 +13,7 @@
   ],
   "scripts": {
     "check": "tsc --noEmit",
+    "test": "vitest run",
     "pack:dry-run": "npm pack --dry-run"
   },
   "files": [
@@ -51,6 +52,7 @@
   "devDependencies": {
     "@mariozechner/pi-coding-agent": "latest",
     "typescript": "^5.9.3",
-    "typebox": "latest"
+    "typebox": "latest",
+    "vitest": "^4.1.5"
   }
 }
