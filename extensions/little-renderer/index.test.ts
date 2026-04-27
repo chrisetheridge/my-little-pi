@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { initTheme } from "@mariozechner/pi-coding-agent";
 
 type Handler = (event: any, ctx?: any) => void | Promise<void>;
 
@@ -92,5 +93,53 @@ describe("little-renderer extension", () => {
 		const rendered = readTool.renderCall({ path: "/Users/me/project/README.md" }, theme, ctx);
 		expect(rendered.render(80).join("\n")).toContain("Read README.md");
 		expect(rendered.render(80).join("\n")).toContain("●");
+	});
+
+	it("shows edit diffs in the tool header after the edit completes", async () => {
+		initTheme(undefined, false);
+		const { tools } = await loadExtension();
+		const editTool = tools.get("edit");
+		expect(editTool.renderShell).toBe("default");
+		const theme = {
+			fg: (_role: string, text: string) => text,
+			bold: (text: string) => text,
+		};
+		const ctx = {
+			cwd: "/Users/me/project",
+			state: {},
+			invalidate: vi.fn(),
+			executionStarted: true,
+			isPartial: false,
+			isError: false,
+		};
+
+		const initial = editTool.renderCall({ path: "/Users/me/project/README.md" }, theme, ctx);
+		expect(initial.render(80).join("\n")).toContain("Edit README.md");
+		expect(initial.render(80).join("\n")).not.toContain("+1");
+
+		editTool.renderResult(
+			{
+				content: [{ type: "text", text: "Successfully replaced 1 block(s) in README.md." }],
+				details: { diff: "-1 old line\n+1 new line" },
+			},
+			{ expanded: false, isPartial: false },
+			theme,
+			ctx,
+		);
+
+		await Promise.resolve();
+		expect(ctx.invalidate).toHaveBeenCalledTimes(1);
+
+		const collapsed = editTool.renderCall({ path: "/Users/me/project/README.md" }, theme, ctx);
+		expect(collapsed.render(80).join("\n")).toContain("Edit README.md");
+		expect(collapsed.render(80).join("\n")).toContain("+1");
+		expect(collapsed.render(80).join("\n")).toContain("-1");
+		expect(collapsed.render(80).join("\n")).not.toContain("old line");
+		expect(collapsed.render(80).join("\n")).not.toContain("new line");
+
+		ctx.expanded = true;
+		const expanded = editTool.renderCall({ path: "/Users/me/project/README.md" }, theme, ctx);
+		expect(expanded.render(80).join("\n")).toContain("-1 old line");
+		expect(expanded.render(80).join("\n")).toContain("+1 new line");
 	});
 });

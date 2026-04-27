@@ -1,4 +1,4 @@
-import { createBashTool, createEditTool, createFindTool, createGrepTool, createLsTool, createReadTool, createWriteTool, AssistantMessageComponent } from "@mariozechner/pi-coding-agent";
+import { createBashTool, createEditTool, createFindTool, createGrepTool, createLsTool, createReadTool, createWriteTool, AssistantMessageComponent, renderDiff } from "@mariozechner/pi-coding-agent";
 import type { ExtensionAPI, ExtensionContext, Theme, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 import { Markdown, Text } from "@mariozechner/pi-tui";
 
@@ -429,6 +429,83 @@ function renderSimpleFileCall(
 	return new Text(createCallHeader(theme, `${name[0].toUpperCase()}${name.slice(1)}`, summary, ctx), 0, 0);
 }
 
+function renderEditCall(args: { path?: string }, theme: Theme, ctx: any): Text {
+	syncToolCallStatus(ctx);
+	const summary = args.path ? shortPath(ctx.cwd, args.path) : theme.fg("muted", "file");
+	const header = createCallHeader(theme, "Edit", summary, ctx);
+	const diff = typeof ctx?.state?.editDiff === "string" ? ctx.state.editDiff : "";
+	if (ctx?.expanded && diff) {
+		return new Text(`${header}\n${renderDiff(diff)}`, 0, 0);
+	}
+	const counts = ctx?.state?.editChangeCounts as { added?: number; deleted?: number } | undefined;
+	if (!counts) {
+		return new Text(header, 0, 0);
+	}
+	const parts: string[] = [];
+	if ((counts.added ?? 0) > 0) parts.push(theme.fg("success", `+${counts.added}`));
+	if ((counts.deleted ?? 0) > 0) parts.push(theme.fg("error", `-${counts.deleted}`));
+	if (parts.length === 0) {
+		return new Text(header, 0, 0);
+	}
+	return new Text(`${header} ${parts.join(" ")}`, 0, 0);
+}
+
+function scheduleEditHeaderRefresh(ctx: any): void {
+	const state = ctx?.state;
+	if (!state || state._editHeaderRefreshScheduled) return;
+	state._editHeaderRefreshScheduled = true;
+	queueMicrotask(() => {
+		state._editHeaderRefreshScheduled = false;
+		if (typeof ctx.invalidate === "function") {
+			ctx.invalidate();
+		}
+	});
+}
+
+function renderEditResult(result: any, options: ToolRenderResultOptions, theme: Theme, ctx: any): Text {
+	if (options.isPartial) {
+		setupBlinkTimer(ctx);
+		return new Text(withBranch(theme.fg("warning", "Editing...")), 0, 0);
+	}
+	clearBlinkTimer(ctx);
+	setToolStatus(ctx, ctx.isError ? "error" : "success");
+
+	const diff = typeof result.details?.diff === "string" && result.details.diff.trim().length > 0 ? result.details.diff : undefined;
+	const counts = diff ? countEditDiffLines(diff) : undefined;
+	const changeSummary = counts ? formatEditChangeSummary(counts) : "";
+	if (ctx?.state && (ctx.state.editChangeSummary !== changeSummary || ctx.state.editDiff !== diff)) {
+		ctx.state.editChangeSummary = changeSummary;
+		ctx.state.editChangeCounts = counts;
+		ctx.state.editDiff = diff;
+		scheduleEditHeaderRefresh(ctx);
+	}
+
+	return new Text(withBranch(theme.fg(ctx.isError ? "error" : "success", ctx.isError ? "Failed" : "Applied")), 0, 0);
+}
+
+function countEditDiffLines(diff: string): { added: number; deleted: number } {
+	let added = 0;
+	let deleted = 0;
+
+	for (const line of diff.split("\n")) {
+		if (line.startsWith("+++") || line.startsWith("---")) continue;
+		if (line.startsWith("+")) {
+			added += 1;
+		} else if (line.startsWith("-")) {
+			deleted += 1;
+		}
+	}
+
+	return { added, deleted };
+}
+
+function formatEditChangeSummary(counts: { added: number; deleted: number }): string {
+	const parts: string[] = [];
+	if (counts.added > 0) parts.push(`+${counts.added}`);
+	if (counts.deleted > 0) parts.push(`-${counts.deleted}`);
+	return parts.join(" ");
+}
+
 function renderSimpleFileResult(
 	name: string,
 	result: any,
@@ -473,6 +550,7 @@ function registerCompactTool(
 		label: string;
 		description: string;
 		parameters: any;
+		renderShell?: "default" | "self";
 		execute: (toolCallId: string, params: any, signal: AbortSignal | undefined, onUpdate: any, ctx: ExtensionContext) => Promise<any>;
 	},
 	renderCall: (args: any, theme: Theme, ctx: any) => Text,
@@ -483,6 +561,7 @@ function registerCompactTool(
 		label: tool.label,
 		description: tool.description,
 		parameters: tool.parameters,
+		renderShell: tool.renderShell,
 		execute: tool.execute,
 		renderCall,
 		renderResult,
@@ -500,7 +579,7 @@ function patchToolExecutionRenderers(pi: ExtensionAPI): void {
 	registerCompactTool(pi, createFindTool(cwd) as any, (args, theme, ctx) => renderSimpleFileCall("find", args, theme, ctx), (result, options, theme, ctx) => renderSimpleFileResult("find", result, options, theme, ctx));
 	registerCompactTool(pi, createLsTool(cwd) as any, (args, theme, ctx) => renderSimpleFileCall("ls", args, theme, ctx), (result, options, theme, ctx) => renderSimpleFileResult("ls", result, options, theme, ctx));
 	registerCompactTool(pi, createWriteTool(cwd) as any, (args, theme, ctx) => renderSimpleFileCall("write", args, theme, ctx), (result, options, theme, ctx) => renderSimpleFileResult("write", result, options, theme, ctx));
-	registerCompactTool(pi, createEditTool(cwd) as any, (args, theme, ctx) => renderSimpleFileCall("edit", args, theme, ctx), (result, options, theme, ctx) => renderSimpleFileResult("edit", result, options, theme, ctx));
+	registerCompactTool(pi, { ...(createEditTool(cwd) as any), renderShell: "default" }, renderEditCall, renderEditResult);
 
 	toolRenderersInstalled = true;
 }
