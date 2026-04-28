@@ -111,6 +111,7 @@ describe("little-renderer extension", () => {
 			executionStarted: true,
 			isPartial: false,
 			isError: false,
+			expanded: false,
 		};
 
 		const initial = editTool.renderCall({ path: "/Users/me/project/README.md" }, theme, ctx);
