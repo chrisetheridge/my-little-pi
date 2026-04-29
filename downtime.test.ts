@@ -107,7 +107,7 @@ async function loadExtension(
 		sendMessage: vi.fn(),
 	};
 
-	const { default: downtimeExtension } = await import("./extensions/downtime.ts");
+	const { default: downtimeExtension } = await import("./extensions/downtime/index.ts");
 	downtimeExtension(pi as never);
 
 	return { commands, handlers, renderers, flags, pi };
