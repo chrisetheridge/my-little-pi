@@ -53,13 +53,12 @@ const THINKING_COLORS: Record<string, ThemeColor> = {
 /** Render model segment. Returns null if modelId is empty/undefined. */
 export function renderModel(
   theme: ThemeFn,
-  icons: IconSet,
   modelId: string | undefined,
 ): string | null {
   if (!modelId) return null;
   const display = formatModelDisplay(modelId);
   if (!display) return null;
-  return `${theme.fg("text", icons.model)} ${theme.fg("text", display)}`;
+  return `${theme.fg("text", display)}`;
 }
 
 /** Render thinking level segment. Returns null if level is empty/undefined. */

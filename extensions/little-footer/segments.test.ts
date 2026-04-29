@@ -21,20 +21,20 @@ const icons = iconsFor(false);
 
 describe("renderModel", () => {
   it("returns null with undefined modelId", () => {
-    expect(renderModel(fakeTheme, icons, undefined)).toBeNull();
+    expect(renderModel(fakeTheme, undefined)).toBeNull();
   });
 
   it("returns null with empty modelId", () => {
-    expect(renderModel(fakeTheme, icons, "")).toBeNull();
+    expect(renderModel(fakeTheme, "")).toBeNull();
   });
 
   it("includes provider display and model leaf", () => {
-    const result = renderModel(fakeTheme, icons, "anthropic/claude-sonnet-4-6");
+    const result = renderModel(fakeTheme, "anthropic/claude-sonnet-4-6");
     expect(result).toContain("<text>Anthropic: Claude Sonnet 4 6</text>");
   });
 
   it("renders without provider when no slash", () => {
-    const result = renderModel(fakeTheme, icons, "claude-3-opus");
+    const result = renderModel(fakeTheme, "claude-3-opus");
     expect(result).toContain("<text>Claude 3 Opus</text>");
   });
 });

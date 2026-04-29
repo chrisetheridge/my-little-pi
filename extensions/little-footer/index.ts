@@ -33,6 +33,14 @@ interface UsageTotals {
   cost: number;
 }
 
+interface GitDiffCacheEntry {
+  snapshot: GitDiffStats | null;
+  refreshedAt: number;
+}
+
+const GIT_DIFF_CACHE_TTL_MS = 2_000;
+const gitDiffCache = new Map<string, GitDiffCacheEntry>();
+
 /** Check if the git working directory has uncommitted changes.
  * Returns true when there are staged or unstaged modifications, new files, etc.
  */
@@ -99,6 +107,19 @@ function collectGitDiffStats(cwd: string): GitDiffStats | null {
   }
 }
 
+/** Return cached git diff stats when fresh; otherwise recompute once per TTL. */
+function collectGitDiffStatsCached(cwd: string): GitDiffStats | null {
+  const cached = gitDiffCache.get(cwd);
+  const now = Date.now();
+  if (cached && now - cached.refreshedAt < GIT_DIFF_CACHE_TTL_MS) {
+    return cached.snapshot;
+  }
+
+  const snapshot = collectGitDiffStats(cwd);
+  gitDiffCache.set(cwd, { snapshot, refreshedAt: now });
+  return snapshot;
+}
+
 /** Collect cumulative token usage and cost from assistant messages in the session. */
 function collectUsage(ctx: ExtensionContext): UsageTotals {
   const totals: UsageTotals = { input: 0, output: 0, cost: 0 };
@@ -156,14 +177,14 @@ function buildLine(
   // Read git branch
   const branch = footerData.getGitBranch();
   const gitDirty = isGitDirty(ctx.cwd);
-  const gitDiff = gitDirty ? collectGitDiffStats(ctx.cwd) : null;
+  const gitDiff = gitDirty ? collectGitDiffStatsCached(ctx.cwd) : null;
 
   const showQuotaUsage = isOpenAIModel(ctx.model as { id?: string; provider?: string } | undefined);
   quotaTracker.setEnabled(showQuotaUsage);
 
   // Build left segments
   const leftSegments: string[] = [];
-  const modelSegment = renderModel(theme, icons, ctx.model?.id);
+  const modelSegment = renderModel(theme, ctx.model?.id);
   if (modelSegment) leftSegments.push(modelSegment);
   const thinkingSegment = renderThinking(theme, icons, thinkingLevel);
   if (thinkingSegment) leftSegments.push(thinkingSegment);
