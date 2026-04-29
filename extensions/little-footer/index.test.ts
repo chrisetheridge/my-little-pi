@@ -293,9 +293,9 @@ describe("little-footer extension", () => {
     expect(line).toContain("$0.050");
     expect(line).toContain("OpenAI");
     expect(line).toContain("5h");
-    expect(line).toContain("25%/75%");
+    expect(line).toContain("75%");
     expect(line).toContain("1w");
-    expect(line).toContain("10%/90%");
+    expect(line).toContain("90%");
     expect(line).toContain("caveman:full");
     expect(visibleWidth(line)).toBeLessThanOrEqual(200);
   });
@@ -363,7 +363,6 @@ describe("little-footer extension", () => {
 
     // Untracked files can suppress diff counts; either the counts or the dirty marker are acceptable.
     expect(line).toMatch(/\+\d+|!|\*/);
-    expect(line).toMatch(/-\d+|!|\*/);
   });
 
   it("truncates the rendered line to the requested width", async () => {

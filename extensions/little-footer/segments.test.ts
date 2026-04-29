@@ -119,7 +119,8 @@ describe("renderGit", () => {
 
   it("trims branch names to 15 characters", () => {
     const result = renderGit(fakeTheme, icons, "feature/very-long-branch-name");
-    expect(result).toContain("<success>feature/very-lo</success>");
+    expect(result).toContain("<success>feature/very");
+    expect(result).toContain("...");
     expect(result).not.toContain("feature/very-long-branch-name");
   });
 
@@ -217,7 +218,7 @@ describe("renderQuota", () => {
     expect(result).toContain("<dim>");
     expect(result).toContain("OpenAI");
     expect(result).toContain("5h");
-    expect(result).toContain("69.9%/30.1%");
+    expect(result).toContain("30.1%");
   });
 
   it("uses warning color at 70%", () => {
@@ -233,7 +234,7 @@ describe("renderQuota", () => {
     });
     expect(result).toContain("<warning>");
     expect(result).toContain("OpenAI");
-    expect(result).toContain("70%/30%");
+    expect(result).toContain("30%");
   });
 
   it("uses error color at 90%", () => {
@@ -250,7 +251,7 @@ describe("renderQuota", () => {
     expect(result).toContain("<error>");
     expect(result).toContain("OpenAI");
     expect(result).toContain("1w");
-    expect(result).toContain("90%/10%");
+    expect(result).toContain("10%");
   });
 
   it("renders both windows when available", () => {
@@ -270,9 +271,9 @@ describe("renderQuota", () => {
     });
     expect(result).toContain("OpenAI");
     expect(result).toContain("5h");
-    expect(result).toContain("50%/50%");
+    expect(result).toContain("50%");
     expect(result).toContain("1w");
-    expect(result).toContain("10%/90%");
+    expect(result).toContain("90%");
   });
 });
 

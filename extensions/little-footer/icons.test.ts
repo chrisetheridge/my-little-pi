@@ -72,14 +72,15 @@ describe("iconsFor", () => {
     const icons = iconsFor(true);
     const keys = Object.keys(icons);
     const expectedKeys = [
-      "pi",
       "model",
       "thinking",
       "path",
       "git",
+      "dirty",
       "tokens",
       "cost",
       "context",
+      "time",
       "separator",
     ];
     for (const key of expectedKeys) {
@@ -92,14 +93,15 @@ describe("iconsFor", () => {
     const icons = iconsFor(false);
     const keys = Object.keys(icons);
     const expectedKeys = [
-      "pi",
       "model",
       "thinking",
       "path",
       "git",
+      "dirty",
       "tokens",
       "cost",
       "context",
+      "time",
       "separator",
     ];
     for (const key of expectedKeys) {
