@@ -7,7 +7,6 @@ import {
   renderGit,
   renderModel,
   renderPath,
-  renderPi,
   renderQuota,
   renderThinking,
   renderTokens,
@@ -19,19 +18,6 @@ const fakeTheme: ThemeFn = {
 };
 
 const icons = iconsFor(false);
-
-describe("renderPi", () => {
-  it("uses accent color", () => {
-    const result = renderPi(fakeTheme, icons);
-    expect(result).toContain("<accent>");
-    expect(result).toContain("</accent>");
-  });
-
-  it("renders the pi icon", () => {
-    const result = renderPi(fakeTheme, icons);
-    expect(result).toContain("π");
-  });
-});
 
 describe("renderModel", () => {
   it("returns null with undefined modelId", () => {

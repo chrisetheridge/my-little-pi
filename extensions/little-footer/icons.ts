@@ -3,7 +3,6 @@
  */
 
 export interface IconSet {
-  pi: string;
   model: string;
   thinking: string;
   path: string;
@@ -17,28 +16,26 @@ export interface IconSet {
 }
 
 const NERD_ICONS: IconSet = {
-  pi: "π",
   model: "◈",
   thinking: "?",
   path: "dir",
   git: "git",
   dirty: "!",
   tokens: "tok",
-  cost: "$",
+  cost: "",
   context: "◫",
-  time: ">",
+  time: "",
   separator: "|",
 };
 
 const ASCII_ICONS: IconSet = {
-  pi: "π",
   model: "model",
   thinking: "think",
   path: "dir",
   git: "git",
   dirty: "*",
   tokens: "tok",
-  cost: "$",
+  cost: "",
   context: "ctx",
   time: "tm",
   separator: "|",

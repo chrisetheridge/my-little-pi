@@ -19,7 +19,6 @@ import {
   renderGit,
   renderModel,
   renderPath,
-  renderPi,
   renderQuota,
   renderThinking,
   renderTime,
@@ -164,7 +163,6 @@ function buildLine(
 
   // Build left segments
   const leftSegments: string[] = [];
-  leftSegments.push(renderPi(theme, icons));
   const modelSegment = renderModel(theme, icons, ctx.model?.id);
   if (modelSegment) leftSegments.push(modelSegment);
   const thinkingSegment = renderThinking(theme, icons, thinkingLevel);

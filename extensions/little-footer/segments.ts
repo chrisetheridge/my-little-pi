@@ -49,11 +49,6 @@ const THINKING_COLORS: Record<string, ThemeColor> = {
   xhigh: "error",
 };
 
-/** Render the Pi marker. */
-export function renderPi(theme: ThemeFn, icons: IconSet): string {
-  return theme.fg("accent", icons.pi);
-}
-
 /** Render model segment. Returns null if modelId is empty/undefined. */
 export function renderModel(
   theme: ThemeFn,
@@ -165,7 +160,7 @@ function renderQuotaWindow(
   const availablePercent = Math.max(0, 100 - window.usedPercent);
   const color = window.usedPercent >= 90 ? "error" : window.usedPercent >= 70 ? "warning" : "dim";
   const label = formatWindowDuration(window.windowDurationMins);
-  const percentText = `${formatPercentCompact(window.usedPercent)}/${formatPercentCompact(availablePercent)}`;
+  const percentText = `${formatPercentCompact(availablePercent)}`;
 
   if (label) {
     return `${theme.fg(color, label)} ${theme.fg(color, percentText)}`;
