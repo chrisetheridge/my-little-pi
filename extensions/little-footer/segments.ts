@@ -3,6 +3,7 @@
  */
 
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
+import { truncateToWidth } from "@mariozechner/pi-tui";
 import type { IconSet } from "./icons.ts";
 import { formatCost, formatPathBasename, formatTokens, sanitizeStatusText } from "./format.ts";
 import { formatModelDisplay } from "./model-name.ts";
@@ -94,7 +95,7 @@ export function renderGit(
   diffStats?: GitDiffStats | null,
 ): string | null {
   if (branch === null || branch === "") return null;
-  const branchName = branch.slice(0, 15);
+  const branchName = truncateToWidth(branch, 15);
   let suffix = "";
   if (dirty) {
     if (diffStats && (diffStats.added > 0 || diffStats.deleted > 0)) {
