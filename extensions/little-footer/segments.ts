@@ -4,16 +4,24 @@
 
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
 import type { IconSet } from "./icons.ts";
-import { formatCost, formatPathBasename, formatPercent, formatTokens, sanitizeStatusText } from "./format.ts";
+import { formatCost, formatPathBasename, formatTokens, sanitizeStatusText } from "./format.ts";
 import { formatModelDisplay } from "./model-name.ts";
 
 export interface ThemeFn {
   fg: (role: ThemeColor, text: string) => string;
 }
 
-export interface ContextSegmentInput {
-  percent: number | null;
-  contextWindow: number | null;
+export interface QuotaWindowInput {
+  usedPercent: number;
+  windowDurationMins: number | null;
+  resetsAt: number | null;
+}
+
+export interface QuotaSegmentInput {
+  limitId: string | null;
+  limitName: string | null;
+  primary: QuotaWindowInput | null;
+  secondary: QuotaWindowInput | null;
 }
 
 export interface GitDiffStats {
@@ -91,6 +99,7 @@ export function renderGit(
   diffStats?: GitDiffStats | null,
 ): string | null {
   if (branch === null || branch === "") return null;
+  const branchName = branch.slice(0, 15);
   let suffix = "";
   if (dirty) {
     if (diffStats && (diffStats.added > 0 || diffStats.deleted > 0)) {
@@ -106,7 +115,7 @@ export function renderGit(
       suffix = ` ${theme.fg("error", icons.dirty)}`;
     }
   }
-  return `${theme.fg("success", icons.git)} ${theme.fg("success", branch)}${suffix}`;
+  return `${theme.fg("success", icons.git)} ${theme.fg("success", branchName)}${suffix}`;
 }
 
 /** Render token count segment. Returns null for zero tokens. */
@@ -129,23 +138,64 @@ export function renderCost(
   return `${theme.fg("text", icons.cost)} ${theme.fg("text", formatCost(costUsd))}`;
 }
 
-/** Render context usage segment. Returns null if input is null or percent is null. */
-export function renderContext(
+function formatWindowDuration(windowDurationMins: number | null): string | null {
+  if (windowDurationMins === null || windowDurationMins <= 0) return null;
+  if (windowDurationMins % (60 * 24 * 7) === 0) {
+    return `${windowDurationMins / (60 * 24 * 7)}w`;
+  }
+  if (windowDurationMins % (60 * 24) === 0) {
+    return `${windowDurationMins / (60 * 24)}d`;
+  }
+  if (windowDurationMins % 60 === 0) {
+    return `${windowDurationMins / 60}h`;
+  }
+  return `${windowDurationMins}m`;
+}
+
+function formatPercentCompact(value: number): string {
+  const rounded = Number.isInteger(value) ? value.toFixed(0) : value.toFixed(1);
+  return `${rounded}%`;
+}
+
+function renderQuotaWindow(
+  theme: ThemeFn,
+  window: QuotaWindowInput,
+): string | null {
+  if (!Number.isFinite(window.usedPercent)) return null;
+  const availablePercent = Math.max(0, 100 - window.usedPercent);
+  const color = window.usedPercent >= 90 ? "error" : window.usedPercent >= 70 ? "warning" : "dim";
+  const label = formatWindowDuration(window.windowDurationMins);
+  const percentText = `${formatPercentCompact(window.usedPercent)}/${formatPercentCompact(availablePercent)}`;
+
+  if (label) {
+    return `${theme.fg(color, label)} ${theme.fg(color, percentText)}`;
+  }
+  return theme.fg(color, percentText);
+}
+
+/** Render quota usage segment. Returns null if usage is unavailable. */
+export function renderQuota(
   theme: ThemeFn,
   icons: IconSet,
-  input: ContextSegmentInput | null,
+  input: QuotaSegmentInput | null,
 ): string | null {
-  if (!input || input.percent === null) return null;
-
-  const color = input.percent >= 90 ? "error" : input.percent >= 70 ? "warning" : "dim";
-  let text = `${theme.fg(color, icons.context)} ${formatPercent(input.percent)}`;
-
-  // Include context window if available and non-zero
-  if (input.contextWindow !== null && input.contextWindow > 0) {
-    text += `/${input.contextWindow}`;
+  if (!input) {
+    return null;
   }
 
-  return text;
+  const windows = [input.primary, input.secondary].filter((value): value is QuotaWindowInput => {
+    return value !== null;
+  });
+  if (windows.length === 0) return null;
+
+  const renderedWindows = windows
+    .map((window) => renderQuotaWindow(theme, window))
+    .filter((value): value is string => value !== null);
+  if (renderedWindows.length === 0) return null;
+
+  const label = input.limitName?.trim() || "OpenAI";
+  const separator = ` ${theme.fg("muted", "·")} `;
+  return `${theme.fg("accent", icons.context)} ${theme.fg("text", label)} ${renderedWindows.join(separator)}`;
 }
 
 /** Render extension status segment. */

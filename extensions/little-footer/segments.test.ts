@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
 import { iconsFor } from "./icons.ts";
 import {
-  renderContext,
   renderCost,
   renderExtensionStatus,
   renderGit,
   renderModel,
   renderPath,
   renderPi,
+  renderQuota,
   renderThinking,
   renderTokens,
   type ThemeFn,
@@ -131,6 +131,12 @@ describe("renderGit", () => {
     expect(result).toContain("<success>main</success>");
   });
 
+  it("trims branch names to 15 characters", () => {
+    const result = renderGit(fakeTheme, icons, "feature/very-long-branch-name");
+    expect(result).toContain("<success>feature/very-lo</success>");
+    expect(result).not.toContain("feature/very-long-branch-name");
+  });
+
   it("renders without dirty indicator when not dirty", () => {
     const result = renderGit(fakeTheme, icons, "main", false);
     expect(result).not.toContain("●");
@@ -195,63 +201,92 @@ describe("renderCost", () => {
   });
 });
 
-describe("renderContext", () => {
+describe("renderQuota", () => {
   it("returns null with null input", () => {
-    expect(renderContext(fakeTheme, icons, null)).toBeNull();
+    expect(renderQuota(fakeTheme, icons, null)).toBeNull();
   });
 
-  it("returns null with null percent", () => {
+  it("returns null with no windows", () => {
     expect(
-      renderContext(fakeTheme, icons, { percent: null, contextWindow: 200_000 }),
+      renderQuota(fakeTheme, icons, {
+        limitId: "codex",
+        limitName: "OpenAI",
+        primary: null,
+        secondary: null,
+      }),
     ).toBeNull();
   });
 
   it("uses dim color below 70%", () => {
-    const result = renderContext(fakeTheme, icons, {
-      percent: 69.9,
-      contextWindow: 200_000,
+    const result = renderQuota(fakeTheme, icons, {
+      limitId: "codex",
+      limitName: "OpenAI",
+      primary: {
+        usedPercent: 69.9,
+        windowDurationMins: 300,
+        resetsAt: null,
+      },
+      secondary: null,
     });
     expect(result).toContain("<dim>");
+    expect(result).toContain("OpenAI");
+    expect(result).toContain("5h");
+    expect(result).toContain("69.9%/30.1%");
   });
 
   it("uses warning color at 70%", () => {
-    const result = renderContext(fakeTheme, icons, {
-      percent: 70,
-      contextWindow: 200_000,
+    const result = renderQuota(fakeTheme, icons, {
+      limitId: "codex",
+      limitName: "OpenAI",
+      primary: {
+        usedPercent: 70,
+        windowDurationMins: 300,
+        resetsAt: null,
+      },
+      secondary: null,
     });
     expect(result).toContain("<warning>");
+    expect(result).toContain("OpenAI");
+    expect(result).toContain("70%/30%");
   });
 
   it("uses error color at 90%", () => {
-    const result = renderContext(fakeTheme, icons, {
-      percent: 90,
-      contextWindow: 200_000,
+    const result = renderQuota(fakeTheme, icons, {
+      limitId: "codex",
+      limitName: "OpenAI",
+      primary: {
+        usedPercent: 90,
+        windowDurationMins: 10080,
+        resetsAt: null,
+      },
+      secondary: null,
     });
     expect(result).toContain("<error>");
+    expect(result).toContain("OpenAI");
+    expect(result).toContain("1w");
+    expect(result).toContain("90%/10%");
   });
 
-  it("includes context window when present", () => {
-    const result = renderContext(fakeTheme, icons, {
-      percent: 50,
-      contextWindow: 200_000,
+  it("renders both windows when available", () => {
+    const result = renderQuota(fakeTheme, icons, {
+      limitId: "codex",
+      limitName: "OpenAI",
+      primary: {
+        usedPercent: 50,
+        windowDurationMins: 300,
+        resetsAt: null,
+      },
+      secondary: {
+        usedPercent: 10,
+        windowDurationMins: 10080,
+        resetsAt: null,
+      },
     });
-    expect(result).toContain("/200000");
-  });
-
-  it("omits context window when zero", () => {
-    const result = renderContext(fakeTheme, icons, {
-      percent: 50,
-      contextWindow: 0,
-    });
-    expect(result).not.toContain("/0");
-  });
-
-  it("omits context window when null", () => {
-    const result = renderContext(fakeTheme, icons, {
-      percent: 50,
-      contextWindow: null,
-    });
-    expect(result).not.toContain("/200000");
+    expect(result).toContain("OpenAI");
+    expect(result).toContain("5h");
+    expect(result).toContain("50%/50%");
+    expect(result).toContain("1w");
+    expect(result).toContain("10%/90%");
   });
 });
 

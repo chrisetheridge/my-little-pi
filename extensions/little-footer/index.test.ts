@@ -1,6 +1,35 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { visibleWidth } from "@mariozechner/pi-tui";
 
+interface QuotaSnapshot {
+  limitId: string | null;
+  limitName: string | null;
+  primary: {
+    usedPercent: number;
+    windowDurationMins: number | null;
+    resetsAt: number | null;
+  } | null;
+  secondary: {
+    usedPercent: number;
+    windowDurationMins: number | null;
+    resetsAt: number | null;
+  } | null;
+}
+
+const quotaTrackerMock = vi.hoisted(() => ({
+  snapshot: null as QuotaSnapshot | null,
+  setEnabled: vi.fn(),
+  dispose: vi.fn(),
+}));
+
+vi.mock("./codex-usage.ts", () => ({
+  createCodexQuotaTracker: () => ({
+    setEnabled: quotaTrackerMock.setEnabled,
+    getSnapshot: () => quotaTrackerMock.snapshot,
+    dispose: quotaTrackerMock.dispose,
+  }),
+}));
+
 type CommandHandler = (args: string, ctx: FakeCtx) => Promise<void> | void;
 type SessionStartHandler = (event: unknown, ctx: FakeCtx) => void | Promise<void>;
 
@@ -15,7 +44,7 @@ interface FakeCtx {
     getBranch: () => unknown[];
   };
   getContextUsage: () =>
-    | { percent: number | null; contextWindow: number | null }
+    | { tokens: number | null; percent: number | null; contextWindow: number | null }
     | undefined;
 }
 
@@ -44,6 +73,9 @@ const originalEnv = { ...process.env };
 afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
+  quotaTrackerMock.snapshot = null;
+  quotaTrackerMock.setEnabled.mockReset();
+  quotaTrackerMock.dispose.mockReset();
   for (const key of Object.keys(process.env)) {
     delete process.env[key];
   }
@@ -199,12 +231,26 @@ describe("little-footer extension", () => {
   });
 
   it("renders the footer line with all active segments", async () => {
+    quotaTrackerMock.snapshot = {
+      limitId: "codex",
+      limitName: "OpenAI",
+      primary: {
+        usedPercent: 25,
+        windowDurationMins: 300,
+        resetsAt: null,
+      },
+      secondary: {
+        usedPercent: 10,
+        windowDurationMins: 10080,
+        resetsAt: null,
+      },
+    };
     const { handlers } = await loadExtension({
       LITTLE_FOOTER_NERD_FONTS: "0",
     });
     const ctx = createCtx({
       cwd: "/Users/me/my-little-pi/",
-      getContextUsage: () => ({ percent: 25, contextWindow: 200000 }),
+      model: { id: "openai/gpt-5.2" },
       sessionManager: {
         getBranch: () => [
           {
@@ -240,14 +286,51 @@ describe("little-footer extension", () => {
     const component = factory({}, theme, footerData);
     const [line] = component.render(200);
 
-    expect(line).toContain("Anthropic: Claude Sonnet 4 6");
+    expect(line).toContain("OpenAI: GPT 5.2");
     expect(line).toContain("my-little-pi");
     expect(line).toContain("main");
     expect(line).toContain("1.2k");
     expect(line).toContain("$0.050");
-    expect(line).toContain("25.0%/200000");
+    expect(line).toContain("OpenAI");
+    expect(line).toContain("5h");
+    expect(line).toContain("25%/75%");
+    expect(line).toContain("1w");
+    expect(line).toContain("10%/90%");
     expect(line).toContain("caveman:full");
     expect(visibleWidth(line)).toBeLessThanOrEqual(200);
+  });
+
+  it("omits quota usage for non-openai models", async () => {
+    const { handlers } = await loadExtension({
+      LITTLE_FOOTER_NERD_FONTS: "0",
+    });
+    const ctx = createCtx({
+      model: { id: "anthropic/claude-sonnet-4-6" },
+      getContextUsage: () => ({ tokens: 50_000, percent: 25, contextWindow: 200000 }),
+      sessionManager: {
+        getBranch: () => [],
+      },
+    });
+    const footerData: FakeFooterData = {
+      getGitBranch: () => "main",
+      getExtensionStatuses: () => new Map(),
+    };
+
+    await handlers.get("session_start")?.({}, ctx);
+
+    const factory = ctx.ui.setFooter.mock.calls[0][0] as (
+      tui: unknown,
+      theme: { fg: (role: string, text: string) => string },
+      footerData: FakeFooterData,
+    ) => { render: (width: number) => string[] };
+    const theme = {
+      fg: (_role: string, text: string) => `\u001b[36m${text}\u001b[0m`,
+    };
+    const component = factory({}, theme, footerData);
+    const [line] = component.render(200);
+
+    expect(line).not.toContain("25%/75%");
+    expect(line).not.toContain("10%/90%");
   });
 
   it("shows dirty indicator when git repo has uncommitted changes", async () => {
@@ -303,7 +386,6 @@ describe("little-footer extension", () => {
           },
         ],
       },
-      getContextUsage: () => ({ percent: 90, contextWindow: 200000 }),
     });
     const footerData: FakeFooterData = {
       getGitBranch: () => "feature/footer",

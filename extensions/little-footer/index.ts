@@ -12,14 +12,15 @@ import type {
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { detectNerdFonts, iconsFor, type IconSet } from "./icons.ts";
+import { createCodexQuotaTracker, type QuotaTracker } from "./codex-usage.ts";
 import {
-  renderContext,
   renderCost,
   renderExtensionStatus,
   renderGit,
   renderModel,
   renderPath,
   renderPi,
+  renderQuota,
   renderThinking,
   renderTime,
   renderTokens,
@@ -123,6 +124,17 @@ function collectUsage(ctx: ExtensionContext): UsageTotals {
   return totals;
 }
 
+/** Return true when the active model is provided by OpenAI. */
+function isOpenAIModel(model: { id?: string; provider?: string } | undefined): boolean {
+  if (!model) return false;
+  const providerValue =
+    model.provider ??
+    (model.id && model.id.includes("/") ? model.id.slice(0, model.id.indexOf("/")) : undefined);
+  if (!providerValue) return false;
+  const provider = providerValue.toLowerCase();
+  return provider.startsWith("openai");
+}
+
 /** Build a single footer line. */
 function buildLine(
   theme: ThemeFn,
@@ -130,6 +142,7 @@ function buildLine(
   ctx: ExtensionContext,
   pi: ExtensionAPI,
   footerData: ReadonlyFooterDataProvider,
+  quotaTracker: QuotaTracker,
   width: number,
 ): string {
   if (width <= 0) return "";
@@ -146,8 +159,8 @@ function buildLine(
   const gitDirty = isGitDirty(ctx.cwd);
   const gitDiff = gitDirty ? collectGitDiffStats(ctx.cwd) : null;
 
-  // Read context usage
-  const contextUsage = ctx.getContextUsage();
+  const showQuotaUsage = isOpenAIModel(ctx.model as { id?: string; provider?: string } | undefined);
+  quotaTracker.setEnabled(showQuotaUsage);
 
   // Build left segments
   const leftSegments: string[] = [];
@@ -167,14 +180,19 @@ function buildLine(
   const costSegment = renderCost(theme, icons, usage.cost);
   if (costSegment) rightSegments.push(costSegment);
 
-  // Context segment
-  if (contextUsage) {
-    const contextInput = {
-      percent: contextUsage.percent,
-      contextWindow: contextUsage.contextWindow ?? null,
-    };
-    const contextSegment = renderContext(theme, icons, contextInput);
-    if (contextSegment) rightSegments.push(contextSegment);
+  // Quota segment
+  if (showQuotaUsage) {
+    const quota = quotaTracker.getSnapshot();
+    const quotaInput = quota
+      ? {
+          limitId: quota.limitId,
+          limitName: quota.limitName,
+          primary: quota.primary,
+          secondary: quota.secondary,
+        }
+      : null;
+    const quotaSegment = renderQuota(theme, icons, quotaInput);
+    if (quotaSegment) rightSegments.push(quotaSegment);
   }
 
   // Extension statuses from footerData
@@ -218,9 +236,6 @@ function buildLine(
   return truncateToWidth(fullLine, width);
 }
 
-/** Poll interval for dirty state updates (in ms). */
-const DIRTY_POLL_MS = 2000;
-
 /** Activate the footer for the given context. */
 function activateFooter(
   ctx: ExtensionContext,
@@ -228,11 +243,9 @@ function activateFooter(
   icons: IconSet,
 ): void {
   let invalidateRef: (() => void) | undefined;
-  let lastGitState = JSON.stringify({
-    dirty: isGitDirty(ctx.cwd),
-    diff: collectGitDiffStats(ctx.cwd),
+  const quotaTracker = createCodexQuotaTracker(() => {
+    invalidateRef?.();
   });
-  let timer: ReturnType<typeof setInterval> | null = null;
 
   ctx.ui.setFooter((_tui, theme, footerData) => {
     const themeFn: ThemeFn = {
@@ -243,29 +256,14 @@ function activateFooter(
         invalidateRef = () => component.invalidate();
       },
       render(width: number): string[] {
-        return [buildLine(themeFn, icons, ctx, pi, footerData, width)];
+        return [buildLine(themeFn, icons, ctx, pi, footerData, quotaTracker, width)];
       },
       dispose() {
-        if (timer) {
-          clearInterval(timer);
-          timer = null;
-        }
+        quotaTracker.dispose();
       },
     };
     return component;
   });
-
-  // Poll for dirty state changes continuously
-  timer = setInterval(() => {
-    const currentGitState = JSON.stringify({
-      dirty: isGitDirty(ctx.cwd),
-      diff: collectGitDiffStats(ctx.cwd),
-    });
-    if (currentGitState !== lastGitState) {
-      lastGitState = currentGitState;
-      invalidateRef?.();
-    }
-  }, DIRTY_POLL_MS);
 }
 
 /** Default export - the extension factory. */
