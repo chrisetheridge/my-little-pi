@@ -54,6 +54,22 @@ pi -e ./
 ## Use
 
 - Run `/little-pi` in Pi to verify the example extension loaded.
+- Configure file hooks by creating `.pi/extensions/file-hooks.json` in a repo that uses this package. Example:
+
+```json
+{
+  "hooks": [
+    {
+      "name": "cljfmt",
+      "match": ["**/*.clj", "**/*.cljc", "**/*.cljs"],
+      "command": "bb",
+      "args": ["cljfmt-fix", "{path}"]
+    }
+  ]
+}
+```
+
+- `{path}` is the project-relative path; `{absolutePath}`, `{cwd}`, `{dir}`, and `{absoluteDir}` are also available.
 - Run `/review-staged` to expand the staged-code-review prompt template.
 - Run `/debug-issue <description>` to expand the debugging prompt template.
 - Run `/skill:pi-package-maintainer` when changing this package.
