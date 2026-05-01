@@ -3,6 +3,7 @@
 Personal package for [Pi](https://pi.dev) extensions, skills, prompt templates, and themes.
 
 Pi packages are regular npm or git packages that expose resources through the `pi` field in `package.json`.
+For git installs, Pi clones the repository, runs `npm install` when `package.json` is present, then loads the declared resources. Pi core packages imported by extensions are listed as peer dependencies.
 
 ## Contents
 
@@ -33,10 +34,10 @@ pi install ./ -l
 
 Project-local installs are written to `.pi/settings.json` for the current project. Omit `-l` to install globally in `~/.pi/agent/settings.json`.
 
-From git after this repository is pushed:
+From git:
 
 ```bash
-pi install git:github.com/<user>/my-little-pi
+pi install git:github.com/chrisetheridge/my-little-pi
 ```
 
 From npm if published later:
@@ -97,7 +98,12 @@ Themes hot-reload when the active theme file changes.
 ```json
 {
   "pi": {
-    "extensions": ["./extensions"],
+    "extensions": [
+      "./extensions/downtime/index.ts",
+      "./extensions/little-footer/index.ts",
+      "./extensions/little-renderer/index.ts",
+      "./extensions/little-spinner/index.ts"
+    ],
     "skills": ["./skills"],
     "prompts": ["./prompts"],
     "themes": ["./themes"]
