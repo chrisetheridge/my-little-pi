@@ -23,6 +23,7 @@ interface TestCtx {
 	cwd: string;
 	hasUI: boolean;
 	ui: {
+		custom: ReturnType<typeof vi.fn>;
 		notify: ReturnType<typeof vi.fn>;
 		setStatus: ReturnType<typeof vi.fn>;
 		theme: {
@@ -60,6 +61,7 @@ function createCtx(cwd: string, entries: Array<any> = []): TestCtx {
 		cwd,
 		hasUI: true,
 		ui: {
+			custom: vi.fn().mockResolvedValue("escape"),
 			notify: vi.fn(),
 			setStatus: vi.fn(),
 			theme: {
@@ -123,7 +125,7 @@ describe("downtime extension", () => {
 		expect(flags.has("downtime")).toBe(true);
 	});
 
-	it("injects the downtime policy and blocks tools during the active window", async () => {
+	it("shows the downtime overlay immediately and allows work after acceptance", async () => {
 		const { homeDir, cwd } = makeProjectRoot();
 		writeFileSync(
 			join(cwd, ".pi", "extensions", "downtime.json"),
@@ -142,13 +144,20 @@ describe("downtime extension", () => {
 		const beforeAgentStart = handlers.get("before_agent_start");
 		const toolCall = handlers.get("tool_call");
 		const ctx = createCtx(cwd);
+		ctx.ui.custom.mockResolvedValue("continue");
 
 		await sessionStart?.({}, ctx);
+		expect(ctx.ui.custom).toHaveBeenCalledWith(expect.any(Function), expect.objectContaining({ overlay: true }));
+		expect(pi.appendEntry).toHaveBeenCalledWith(
+			"downtime",
+			expect.objectContaining({
+				confirmedWindowKey: expect.any(String),
+			}),
+		);
 
 		const initial = await beforeAgentStart?.({ systemPrompt: "base" }, ctx);
-		expect(initial?.message?.customType).toBe("downtime");
-		expect(initial?.message?.display).toBe(false);
-		expect(initial?.message?.content).toContain("Downtime is active");
+		expect(initial?.systemPrompt).toContain("The user has already confirmed continuation");
+		expect(initial?.message).toBeUndefined();
 		expect(ctx.ui.setStatus).toHaveBeenCalledWith("downtime", expect.any(String));
 
 		const blocked = await toolCall?.(
@@ -158,25 +167,7 @@ describe("downtime extension", () => {
 			},
 			ctx,
 		);
-		expect(blocked).toEqual({
-			block: true,
-			reason: expect.stringContaining("Downtime is active"),
-		});
-
-		const confirmed = await toolCall?.(
-			{
-				toolName: "bash",
-				input: { command: "echo continue-downtime" },
-			},
-			ctx,
-		);
-		expect(confirmed).toBeUndefined();
-		expect(pi.appendEntry).toHaveBeenCalledWith(
-			"downtime",
-			expect.objectContaining({
-				confirmedWindowKey: expect.any(String),
-			}),
-		);
+		expect(blocked).toBeUndefined();
 
 		const afterConfirm = await toolCall?.(
 			{
@@ -186,6 +177,42 @@ describe("downtime extension", () => {
 			ctx,
 		);
 		expect(afterConfirm).toBeUndefined();
+	});
+
+	it("blocks the pending tool when the downtime overlay is dismissed", async () => {
+		const { homeDir, cwd } = makeProjectRoot();
+		writeFileSync(
+			join(cwd, ".pi", "extensions", "downtime.json"),
+			JSON.stringify({
+				time: "22:00",
+				durationMinutes: 480,
+			}),
+			"utf-8",
+		);
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2026, 3, 28, 22, 30, 0));
+
+		const { handlers, pi } = await loadExtension({ cwd, homeDir });
+		const sessionStart = handlers.get("session_start");
+		const toolCall = handlers.get("tool_call");
+		const ctx = createCtx(cwd);
+		ctx.ui.custom.mockResolvedValue("escape");
+
+		await sessionStart?.({}, ctx);
+
+		const result = await toolCall?.(
+			{
+				toolName: "read",
+				input: { path: "README.md" },
+			},
+			ctx,
+		);
+
+		expect(result).toEqual({
+			block: true,
+			reason: expect.stringContaining("Downtime is active"),
+		});
+		expect(pi.appendEntry).not.toHaveBeenCalled();
 	});
 
 	it("accepts a confirmation typed as chat input before the next tool call", async () => {
@@ -252,7 +279,7 @@ describe("downtime extension", () => {
 
 		const result = await beforeAgentStart?.({ systemPrompt: "base" }, ctx);
 		expect(result?.systemPrompt).toContain("Downtime is active");
-		expect(result?.systemPrompt).toContain("echo continue-downtime");
+		expect(result?.systemPrompt).toContain("A downtime overlay will ask the user");
 		expect(result?.systemPrompt).toContain("Do not answer the user as if downtime is normal");
 	});
 
