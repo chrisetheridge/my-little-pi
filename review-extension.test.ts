@@ -15,6 +15,7 @@ function makePi() {
 		registerCommand: vi.fn((name: string, options: any) => {
 			commands.set(name, options);
 		}),
+		appendEntry: vi.fn(),
 	};
 	return { pi, commands };
 }
@@ -139,6 +140,69 @@ describe("review extension", () => {
 
 		expect(ctx.ui.custom).not.toHaveBeenCalled();
 		expect(replacementCtx.ui.custom).toHaveBeenCalled();
+	});
+
+	it("persists initial and updated review state when a finding is ignored", async () => {
+		const assistantText = [
+			"```review-findings",
+			JSON.stringify({
+				summary: "One issue found.",
+				findings: [
+					{
+						severity: "high",
+						file: "README.md",
+						startLine: 1,
+						title: "Risky README",
+						explanation: "The README says something risky.",
+						suggestedFix: "Make the README safer.",
+					},
+				],
+			}),
+			"```",
+		].join("\n");
+		const { pi, commands } = makePi();
+		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		reviewExtension(pi as never);
+
+		const replacementCtx = makeReviewCtx(assistantText);
+		replacementCtx.ui.custom = vi.fn(async (factory: any) => {
+			let result;
+			const component = factory(null, replacementCtx.ui.theme, null, (updated: any) => {
+				result = updated;
+			});
+			component.handleInput("i");
+			component.handleInput("\x1b");
+			return result;
+		});
+		const ctx = makeCommandCtx({
+			cwd: makeRepo(),
+			fork: vi.fn(async (_entryId: string, options: any) => {
+				await options?.withSession?.(replacementCtx);
+				return { cancelled: false };
+			}),
+		});
+
+		await commands.get("review").handler("", ctx);
+
+		expect(pi.appendEntry).toHaveBeenCalledTimes(2);
+		expect(pi.appendEntry).toHaveBeenNthCalledWith(
+			1,
+			"review-state",
+			expect.objectContaining({
+				kind: "review-state",
+				currentIndex: 0,
+				findings: [expect.objectContaining({ status: "open" })],
+			}),
+		);
+		expect(pi.appendEntry).toHaveBeenNthCalledWith(
+			2,
+			"review-state",
+			expect.objectContaining({
+				kind: "review-state",
+				currentIndex: 0,
+				findings: [expect.objectContaining({ status: "ignored" })],
+			}),
+		);
 	});
 
 	it("handles cancelled review fork without parsing or showing findings", async () => {

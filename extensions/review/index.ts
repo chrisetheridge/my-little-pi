@@ -3,6 +3,7 @@ import { extractFindingsBlock, normalizeFindings } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
 import { buildBaseReviewTarget, buildUncommittedReviewTarget, detectBaseRef, isGitRepository } from "./git.ts";
 import { buildReviewPrompt } from "./prompt.ts";
+import { REVIEW_STATE_ENTRY_TYPE, buildInitialReviewState } from "./state.ts";
 import { chooseInitialMode, confirmPreflight, showFindings } from "./ui.ts";
 
 function lastAssistantText(ctx: Pick<ExtensionCommandContext, "sessionManager">): string {
@@ -50,7 +51,7 @@ export default function reviewExtension(pi: ExtensionAPI): void {
 			}
 
 			if (mode === "uncommitted") {
-				await runReview(ctx, buildUncommittedReviewTarget(ctx.cwd));
+				await runReview(pi, ctx, buildUncommittedReviewTarget(ctx.cwd));
 				return;
 			}
 
@@ -59,12 +60,12 @@ export default function reviewExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify("Review cancelled.", "info");
 				return;
 			}
-			await runReview(ctx, buildBaseReviewTarget(ctx.cwd, baseRef));
+			await runReview(pi, ctx, buildBaseReviewTarget(ctx.cwd, baseRef));
 		},
 	});
 }
 
-async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Promise<void> {
+async function runReview(pi: ExtensionAPI, ctx: ExtensionCommandContext, target: ReviewTarget): Promise<void> {
 	if (!(await confirmPreflight(ctx, target))) {
 		ctx.ui.notify("Review cancelled.", "info");
 		return;
@@ -93,7 +94,12 @@ async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Pr
 				return;
 			}
 
-			await showFindings(reviewCtx, target, findings);
+			const state = buildInitialReviewState(target, findings, output);
+			pi.appendEntry(REVIEW_STATE_ENTRY_TYPE, state);
+			const updated = await showFindings(reviewCtx, state);
+			if (updated !== state) {
+				pi.appendEntry(REVIEW_STATE_ENTRY_TYPE, updated);
+			}
 		},
 	});
 

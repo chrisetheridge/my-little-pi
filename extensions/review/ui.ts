@@ -1,7 +1,7 @@
 import type { ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component } from "@mariozechner/pi-tui";
-import type { ReviewFinding } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
+import { updateFindingStatus, updateReviewIndex, type ReviewRunState } from "./state.ts";
 
 export async function chooseInitialMode(ctx: ExtensionCommandContext): Promise<"uncommitted" | "base" | null> {
 	const selected = await ctx.ui.select("Review target", ["Uncommitted changes", "Local changes against base"]);
@@ -32,30 +32,40 @@ export async function confirmPreflight(ctx: ExtensionCommandContext, target: Rev
 }
 
 class FindingsDialog implements Component {
-	private index = 0;
+	private state: ReviewRunState;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
 	constructor(
-		private readonly target: ReviewTarget,
-		private readonly findings: ReviewFinding[],
+		state: ReviewRunState,
 		private readonly theme: Theme,
-		private readonly done: (result: "closed") => void,
-	) {}
+		private readonly done: (result: ReviewRunState) => void,
+	) {
+		const maxIndex = Math.max(0, state.findings.length - 1);
+		this.state =
+			state.currentIndex < 0 || state.currentIndex > maxIndex ? updateReviewIndex(state, state.currentIndex) : state;
+	}
 
 	handleInput(data: string): void {
 		if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-			this.done("closed");
+			this.done(this.state);
 			return;
 		}
-		if (this.findings.length === 0) return;
+		if (this.state.findings.length === 0) return;
 		if (matchesKey(data, Key.right) || data === "n") {
-			this.index = Math.min(this.findings.length - 1, this.index + 1);
+			this.state = updateReviewIndex(this.state, this.state.currentIndex + 1);
 			this.invalidate();
 			return;
 		}
 		if (matchesKey(data, Key.left) || data === "p") {
-			this.index = Math.max(0, this.index - 1);
+			this.state = updateReviewIndex(this.state, this.state.currentIndex - 1);
+			this.invalidate();
+			return;
+		}
+		if (data === "i") {
+			const finding = this.state.findings[this.state.currentIndex];
+			if (!finding) return;
+			this.state = updateFindingStatus(this.state, finding.id, "ignored");
 			this.invalidate();
 		}
 	}
@@ -69,17 +79,18 @@ class FindingsDialog implements Component {
 
 		lines.push(`+${"-".repeat(innerWidth + 2)}+`);
 		push(this.theme.fg("accent", "Code review findings"));
-		push(this.theme.fg("dim", this.target.label));
+		push(this.theme.fg("dim", this.state.target.label));
 		push();
 
-		if (this.findings.length === 0) {
+		if (this.state.findings.length === 0) {
 			push("No actionable findings found.");
 			push();
 			push("Esc: close");
 		} else {
-			const finding = this.findings[this.index]!;
+			const finding = this.state.findings[this.state.currentIndex]!;
+			const status = finding.status === "ignored" ? "  IGNORED" : "";
 			push(
-				`${this.index + 1} / ${this.findings.length}  ${finding.severity.toUpperCase()}  ${finding.file}:${finding.startLine}`,
+				`${this.state.currentIndex + 1} / ${this.state.findings.length}  ${finding.severity.toUpperCase()}${status}  ${finding.file}:${finding.startLine}`,
 			);
 			push(finding.title);
 			push();
@@ -88,7 +99,7 @@ class FindingsDialog implements Component {
 			push("Suggested fix:");
 			for (const line of wrapTextWithAnsi(finding.suggestedFix, innerWidth)) push(line);
 			push();
-			push("n/right: next  p/left: previous  Esc: close");
+			push("n/right: next  p/left: previous  i: ignore  Esc: close");
 		}
 
 		lines.push(`+${"-".repeat(innerWidth + 2)}+`);
@@ -105,11 +116,20 @@ class FindingsDialog implements Component {
 
 export async function showFindings(
 	ctx: ExtensionCommandContext,
-	target: ReviewTarget,
-	findings: ReviewFinding[],
-): Promise<void> {
-	await ctx.ui.custom<"closed">((_tui, theme, _keybindings, done) => new FindingsDialog(target, findings, theme, done), {
-		overlay: true,
-		overlayOptions: { width: "80%", minWidth: 60, maxHeight: "70%", anchor: "bottom-center", margin: 1 },
-	});
+	state: ReviewRunState,
+): Promise<ReviewRunState> {
+	let latest = state;
+	const result = await ctx.ui.custom<ReviewRunState>(
+		(_tui, theme, _keybindings, done) => new FindingsDialog(latest, theme, (updated) => {
+			latest = updated;
+			done(updated);
+		}),
+		{
+			overlay: true,
+			overlayOptions: { width: "80%", minWidth: 60, maxHeight: "70%", anchor: "bottom-center", margin: 1 },
+		},
+	);
+
+	if (result?.kind === "review-state") return result;
+	return latest;
 }
