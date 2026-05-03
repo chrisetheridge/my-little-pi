@@ -18,20 +18,16 @@ export interface ReviewTarget {
 	originalRef?: string;
 }
 
-interface GitResult {
+export interface GitCommandResult {
 	ok: boolean;
 	stdout: string;
 	stderr: string;
 }
 
-interface PorcelainEntry {
-	status: string;
-	path: string;
-	originalPath?: string;
-}
+export type GitCommandRunner = (cwd: string, command: string, args: string[]) => GitCommandResult;
 
-function git(cwd: string, args: string[]): GitResult {
-	const result = spawnSync("git", args, {
+export const defaultCommandRunner: GitCommandRunner = (cwd, command, args) => {
+	const result = spawnSync(command, args, {
 		cwd,
 		encoding: "utf-8",
 		stdio: ["ignore", "pipe", "pipe"],
@@ -42,6 +38,25 @@ function git(cwd: string, args: string[]): GitResult {
 		stdout: result.stdout ?? "",
 		stderr: result.stderr ?? "",
 	};
+};
+
+interface PorcelainEntry {
+	status: string;
+	path: string;
+	originalPath?: string;
+}
+
+function git(cwd: string, args: string[], runner = defaultCommandRunner): GitCommandResult {
+	return runner(cwd, "git", args);
+}
+
+function runCommand(
+	cwd: string,
+	command: string,
+	args: string[],
+	runner = defaultCommandRunner,
+): GitCommandResult {
+	return runner(cwd, command, args);
 }
 
 function lines(output: string): string[] {
@@ -55,8 +70,8 @@ function uniqueSorted(values: string[]): string[] {
 	return Array.from(new Set(values)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
-function getPorcelainEntries(cwd: string): PorcelainEntry[] {
-	const parts = git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).stdout
+function getPorcelainEntries(cwd: string, runner = defaultCommandRunner): PorcelainEntry[] {
+	const parts = git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"], runner).stdout
 		.split("\0")
 		.filter(Boolean);
 	const entries: PorcelainEntry[] = [];
@@ -109,9 +124,9 @@ function buildUntrackedFilesContext(cwd: string, files: string[]): string {
 		.join("\n\n");
 }
 
-function countUnstagedFiles(cwd: string, untrackedFiles: string[]): number {
+function countUnstagedFiles(cwd: string, untrackedFiles: string[], runner = defaultCommandRunner): number {
 	return uniqueSorted([
-		...lines(git(cwd, ["diff", "--name-only", "--", "."]).stdout),
+		...lines(git(cwd, ["diff", "--name-only", "--", "."], runner).stdout),
 		...untrackedFiles,
 	]).length;
 }
@@ -120,11 +135,11 @@ export function isGitRepository(cwd: string): boolean {
 	return git(cwd, ["rev-parse", "--is-inside-work-tree"]).stdout.trim() === "true";
 }
 
-export function getCurrentRef(cwd: string): string {
-	const branch = git(cwd, ["branch", "--show-current"]).stdout.trim();
+export function getCurrentRef(cwd: string, runner = defaultCommandRunner): string {
+	const branch = git(cwd, ["branch", "--show-current"], runner).stdout.trim();
 	if (branch) return branch;
 
-	const head = git(cwd, ["rev-parse", "--short", "HEAD"]).stdout.trim();
+	const head = git(cwd, ["rev-parse", "--short", "HEAD"], runner).stdout.trim();
 	return head || "HEAD";
 }
 
@@ -276,4 +291,51 @@ export function buildCommitReviewTarget(cwd: string, commitRef: string): ReviewT
 		unstagedCount: 0,
 		commitRef,
 	};
+}
+
+export function ensureCleanWorktree(cwd: string, runner = defaultCommandRunner): void {
+	const status = git(cwd, ["status", "--porcelain"], runner);
+	if (!status.ok || status.stdout.trim()) {
+		throw new Error("PR review requires a clean worktree before checkout.");
+	}
+}
+
+export function buildPullRequestReviewTarget(
+	cwd: string,
+	prUrl: string,
+	runner = defaultCommandRunner,
+): ReviewTarget {
+	ensureCleanWorktree(cwd, runner);
+	const originalRef = getCurrentRef(cwd, runner);
+	const checkout = runCommand(cwd, "gh", ["pr", "checkout", prUrl], runner);
+	if (!checkout.ok) {
+		throw new Error(checkout.stderr.trim() || checkout.stdout.trim() || `Could not checkout pull request ${prUrl}`);
+	}
+
+	const nameOnlyArgs = ["diff", "--name-only", `${originalRef}...HEAD`, "--", "."];
+	const diffArgs = ["diff", `${originalRef}...HEAD`, "--", "."];
+	const changedFiles = uniqueSorted(lines(git(cwd, nameOnlyArgs, runner).stdout));
+	const diff = git(cwd, diffArgs, runner).stdout;
+
+	return {
+		mode: "pr",
+		label: `Pull request ${prUrl}`,
+		promptContext: [
+			"# Review target: pull request",
+			`Pull request URL: ${prUrl}`,
+			`Original ref: ${originalRef}`,
+			"",
+			`## git diff ${originalRef}...HEAD -- .`,
+			diff || "(no pull request diff)",
+		].join("\n"),
+		changedFiles,
+		stagedCount: 0,
+		unstagedCount: 0,
+		prUrl,
+		originalRef,
+	};
+}
+
+export function restoreOriginalRef(cwd: string, originalRef: string, runner = defaultCommandRunner): boolean {
+	return git(cwd, ["checkout", originalRef], runner).ok;
 }

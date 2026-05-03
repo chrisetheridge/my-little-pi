@@ -4,9 +4,11 @@ import type { ReviewTarget } from "./git.ts";
 import {
 	buildBaseReviewTarget,
 	buildCommitReviewTarget,
+	buildPullRequestReviewTarget,
 	buildUncommittedReviewTarget,
 	detectBaseRef,
 	isGitRepository,
+	restoreOriginalRef,
 } from "./git.ts";
 import { buildReviewPrompt } from "./prompt.ts";
 import { REVIEW_STATE_ENTRY_TYPE, buildInitialReviewState } from "./state.ts";
@@ -78,60 +80,76 @@ export default function reviewExtension(pi: ExtensionAPI): void {
 					return;
 				}
 				await runReview(ctx, buildCommitReviewTarget(ctx.cwd, commitRef));
+				return;
+			}
+
+			if (mode === "pr") {
+				const prUrl = (await ctx.ui.input("Pull request URL", ""))?.trim();
+				if (!prUrl) {
+					ctx.ui.notify("Review cancelled.", "info");
+					return;
+				}
+				await runReview(ctx, buildPullRequestReviewTarget(ctx.cwd, prUrl));
 			}
 		},
 	});
 }
 
 async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Promise<void> {
-	if (!(await confirmPreflight(ctx, target))) {
-		ctx.ui.notify("Review cancelled.", "info");
-		return;
-	}
+	try {
+		if (!(await confirmPreflight(ctx, target))) {
+			ctx.ui.notify("Review cancelled.", "info");
+			return;
+		}
 
-	const leafId = currentLeafId(ctx);
-	if (!leafId) {
-		ctx.ui.notify("Cannot start review without a session leaf.", "error");
-		return;
-	}
+		const leafId = currentLeafId(ctx);
+		if (!leafId) {
+			ctx.ui.notify("Cannot start review without a session leaf.", "error");
+			return;
+		}
 
-	const prompt = buildReviewPrompt(target);
-	const result = await ctx.fork(leafId, {
-		position: "at",
-		withSession: async (reviewCtx) => {
-			await reviewCtx.sendUserMessage(prompt);
-			await reviewCtx.waitForIdle();
-			const output = lastAssistantText(reviewCtx);
+		const prompt = buildReviewPrompt(target);
+		const result = await ctx.fork(leafId, {
+			position: "at",
+			withSession: async (reviewCtx) => {
+				await reviewCtx.sendUserMessage(prompt);
+				await reviewCtx.waitForIdle();
+				const output = lastAssistantText(reviewCtx);
 
-			let findings;
-			try {
-				const parsed = extractFindingsBlock(output);
-				findings = normalizeFindings(parsed.findings);
-			} catch {
-				reviewCtx.ui.notify("Could not parse review findings.", "error");
-				return;
-			}
+				let findings;
+				try {
+					const parsed = extractFindingsBlock(output);
+					findings = normalizeFindings(parsed.findings);
+				} catch {
+					reviewCtx.ui.notify("Could not parse review findings.", "error");
+					return;
+				}
 
-			const state = buildInitialReviewState(target, findings, output);
-			await reviewCtx.sendMessage({
-				customType: REVIEW_STATE_ENTRY_TYPE,
-				content: "",
-				display: false,
-				details: state,
-			});
-			const updated = await showFindings(reviewCtx, state);
-			if (updated !== state) {
+				const state = buildInitialReviewState(target, findings, output);
 				await reviewCtx.sendMessage({
 					customType: REVIEW_STATE_ENTRY_TYPE,
 					content: "",
 					display: false,
-					details: updated,
+					details: state,
 				});
-			}
-		},
-	});
+				const updated = await showFindings(reviewCtx, state);
+				if (updated !== state) {
+					await reviewCtx.sendMessage({
+						customType: REVIEW_STATE_ENTRY_TYPE,
+						content: "",
+						display: false,
+						details: updated,
+					});
+				}
+			},
+		});
 
-	if (result.cancelled) {
-		ctx.ui.notify("Review cancelled.", "info");
+		if (result.cancelled) {
+			ctx.ui.notify("Review cancelled.", "info");
+		}
+	} finally {
+		if (target.originalRef && !restoreOriginalRef(ctx.cwd, target.originalRef)) {
+			ctx.ui.notify(`Failed to restore original git ref ${target.originalRef}.`, "error");
+		}
 	}
 }

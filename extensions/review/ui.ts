@@ -30,15 +30,19 @@ export function qnaAnswerFromResponse(
 	return { ok: true, answer };
 }
 
-export async function chooseInitialMode(ctx: ExtensionCommandContext): Promise<"uncommitted" | "base" | "commit" | null> {
+export async function chooseInitialMode(
+	ctx: ExtensionCommandContext,
+): Promise<"uncommitted" | "base" | "commit" | "pr" | null> {
 	const selected = await ctx.ui.select("Review target", [
 		"Uncommitted changes",
 		"Local changes against base",
 		"Specific commit",
+		"Pull request URL",
 	]);
 	if (selected === "Uncommitted changes") return "uncommitted";
 	if (selected === "Local changes against base") return "base";
 	if (selected === "Specific commit") return "commit";
+	if (selected === "Pull request URL") return "pr";
 	return null;
 }
 
@@ -47,6 +51,8 @@ export function formatPreflight(target: ReviewTarget): string {
 		`Target: ${target.label}`,
 		target.baseRef ? `Base: ${target.baseRef}` : undefined,
 		target.mergeBase ? `Merge base: ${target.mergeBase}` : undefined,
+		target.prUrl ? `Pull request: ${target.prUrl}` : undefined,
+		target.originalRef ? `Original ref: ${target.originalRef}` : undefined,
 		`Files: ${target.changedFiles.length}`,
 		`Staged files: ${target.stagedCount}`,
 		`Unstaged files: ${target.unstagedCount}`,

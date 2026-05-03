@@ -255,4 +255,46 @@ describe("review extension", () => {
 		expect(ctx.ui.custom).not.toHaveBeenCalled();
 		expect(replacementCtx.ui.custom).not.toHaveBeenCalled();
 	});
+
+	it("builds PR reviews from a URL and restores the original ref after review", async () => {
+		const git = await import("./extensions/review/git.ts");
+		vi.spyOn(git, "isGitRepository").mockReturnValue(true);
+		vi.spyOn(git, "buildPullRequestReviewTarget").mockReturnValue({
+			mode: "pr",
+			label: "Pull request https://github.com/example/project/pull/123",
+			promptContext: "PR diff",
+			changedFiles: ["README.md"],
+			stagedCount: 0,
+			unstagedCount: 0,
+			prUrl: "https://github.com/example/project/pull/123",
+			originalRef: "main",
+		});
+		const restore = vi.spyOn(git, "restoreOriginalRef").mockReturnValue(true);
+		const { pi, commands } = makePi();
+		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		reviewExtension(pi as never);
+
+		const replacementCtx = makeReviewCtx();
+		const ctx = makeCommandCtx({
+			ui: {
+				...makeCommandCtx().ui,
+				select: vi.fn(async () => "Pull request URL"),
+				input: vi.fn(async () => "https://github.com/example/project/pull/123"),
+				confirm: vi.fn(async () => true),
+			},
+			fork: vi.fn(async (_entryId: string, options: any) => {
+				await options?.withSession?.(replacementCtx);
+				return { cancelled: false };
+			}),
+		});
+
+		await commands.get("review").handler("", ctx);
+
+		expect(git.buildPullRequestReviewTarget).toHaveBeenCalledWith(
+			ctx.cwd,
+			"https://github.com/example/project/pull/123",
+		);
+		expect(restore).toHaveBeenCalledWith(ctx.cwd, "main");
+		expect(replacementCtx.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("PR diff"));
+	});
 });
