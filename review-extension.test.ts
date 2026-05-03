@@ -145,73 +145,57 @@ describe("review extension", () => {
 		expect(ctx.ui.custom).toHaveBeenCalled();
 	});
 
-	it("persists initial and updated review state when a finding is ignored", async () => {
-		const assistantText = [
-			"```review-findings",
-			JSON.stringify({
-				summary: "One issue found.",
-				findings: [
-					{
-						severity: "high",
-						file: "README.md",
-						startLine: 1,
-						title: "Risky README",
-						explanation: "The README says something risky.",
-						suggestedFix: "Make the README safer.",
-					},
-				],
-			}),
-			"```",
-		].join("\n");
-		const { pi, commands } = makePi();
-		pi.appendEntry.mockImplementation(() => {
-			throw new Error("stale appendEntry");
-		});
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
-		reviewExtension(pi as never);
-
-		const ctx = makeReviewCtx(assistantText, { cwd: makeRepo() });
-		ctx.ui.custom = vi.fn(async (factory: any) => {
-			let result;
-			const component = factory(null, ctx.ui.theme, null, (updated: any) => {
+	it("lets the user fix, discard, and submit findings", async () => {
+		const { FindingsDialog } = await import("./extensions/review/ui.ts");
+		const { buildInitialReviewState } = await import("./extensions/review/state.ts");
+		const state = buildInitialReviewState({
+			mode: "uncommitted",
+			label: "Uncommitted changes",
+			promptContext: "diff",
+			changedFiles: ["README.md"],
+			stagedCount: 0,
+			unstagedCount: 1,
+		}, [
+			{
+				id: "finding-a",
+				severity: "high",
+				file: "README.md",
+				startLine: 1,
+				title: "Risky README",
+				explanation: "The README says something risky.",
+				suggestedFix: "Make the README safer.",
+				status: "open",
+			},
+			{
+				id: "finding-b",
+				severity: "low",
+				file: "README.md",
+				startLine: 2,
+				title: "Second issue",
+				explanation: "Another issue.",
+				suggestedFix: "Fix the second issue.",
+				status: "open",
+			},
+		], "raw");
+		let result: any;
+		const dialog = new FindingsDialog(
+			state,
+			makeRepo(),
+			{ fg: (role: string, text: string) => role === "dim" ? `<dim>${text}</dim>` : text } as never,
+			(updated) => {
 				result = updated;
-			});
-			component.handleInput("i");
-			component.handleInput("\x1b");
-			return result;
-		});
-
-		await commands.get("review").handler("", ctx);
-
-		expect(pi.appendEntry).not.toHaveBeenCalled();
-		expect(ctx.sendMessage).toHaveBeenCalledTimes(2);
-		expect(ctx.sendMessage).toHaveBeenNthCalledWith(
-			1,
-			expect.objectContaining({
-				customType: "review-state",
-				content: "",
-				display: false,
-				details: expect.objectContaining({
-					kind: "review-state",
-					currentIndex: 0,
-					findings: [expect.objectContaining({ status: "open" })],
-				}),
-			}),
+			},
+			async () => true,
 		);
-		expect(ctx.sendMessage).toHaveBeenNthCalledWith(
-			2,
-			expect.objectContaining({
-				customType: "review-state",
-				content: "",
-				display: false,
-				details: expect.objectContaining({
-					kind: "review-state",
-					currentIndex: 0,
-					findings: [expect.objectContaining({ status: "ignored" })],
-				}),
-			}),
-		);
-		expect(ctx.ui.custom).toHaveBeenCalled();
+
+		expect(dialog.render(100).join("\n")).toContain("f: fix  d: discard  s: submit");
+		dialog.handleInput("d");
+		expect(dialog.render(100).join("\n")).toContain("Second issue");
+		expect(dialog.render(100).join("\n")).not.toContain("Risky README");
+		dialog.handleInput("s");
+		expect(result).toEqual(expect.objectContaining({ submitted: true }));
+		expect(result.state.findings).toHaveLength(1);
+		expect(result.state.findings[0]?.id).toBe("finding-b");
 	});
 
 	it("runs review without forking the session", async () => {
@@ -311,18 +295,10 @@ describe("review extension", () => {
 			},
 			{ apiKey: "test-key", headers: { "x-test": "1" } },
 		);
-		expect(ctx.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
-			customType: "review-state",
-			details: expect.objectContaining({
-				kind: "review-state",
-				rawReviewOutput: "plain markdown with a real issue",
-				findings: [expect.objectContaining({ title: "Recovered issue" })],
-			}),
-		}));
 		expect(ctx.ui.custom).toHaveBeenCalled();
 	});
 
-	it("shows actions as unavailable in the findings dialog", async () => {
+	it("renders the findings dialog with fix, discard, and submit actions", async () => {
 		const { FindingsDialog } = await import("./extensions/review/ui.ts");
 		const { buildInitialReviewState } = await import("./extensions/review/state.ts");
 		const state = buildInitialReviewState({
@@ -344,100 +320,79 @@ describe("review extension", () => {
 				status: "open",
 			},
 		], "raw");
-			const dialog = new FindingsDialog(
-				state,
-				makeRepo(),
-				{ fg: (role: string, text: string) => role === "dim" ? `<dim>${text}</dim>` : text } as never,
-				vi.fn(),
-				async () => true,
-				async () => undefined,
-			);
-
-		expect(dialog.render(100).join("\n")).toContain("a: actions unavailable");
-
-		dialog.handleInput("a");
-
-		expect(dialog.render(100).join("\n")).toContain("<dim>Actions are not designed yet.</dim>");
-	});
-
-	it("keeps the findings navigator alive while asking a question", async () => {
-		const complete = vi.fn(async () => ({
-			role: "assistant",
-			content: [{ type: "text", text: "Because the code needs a guard." }],
-			api: "test",
-			provider: "test",
-			model: "test/model",
-			usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-			stopReason: "stop",
-			timestamp: Date.now(),
-		}));
-		vi.doMock("@mariozechner/pi-ai", async () => ({
-			...(await vi.importActual<typeof import("@mariozechner/pi-ai")>("@mariozechner/pi-ai")),
-			complete,
-		}));
-
-		const { showFindings } = await import("./extensions/review/ui.ts");
-		const { buildInitialReviewState } = await import("./extensions/review/state.ts");
-		const state = buildInitialReviewState(
-			{
-				mode: "uncommitted",
-				label: "Uncommitted changes",
-				promptContext: "diff",
-				changedFiles: ["README.md"],
-				stagedCount: 0,
-				unstagedCount: 1,
+		let result: any;
+		const dialog = new FindingsDialog(
+			state,
+			makeRepo(),
+			{ fg: (role: string, text: string) => role === "dim" ? `<dim>${text}</dim>` : text } as never,
+			(updated) => {
+				result = updated;
 			},
-			[
-				{
-					id: "finding-a",
-					severity: "high",
-					file: "README.md",
-					startLine: 1,
-					title: "Test finding",
-					explanation: "Explanation.",
-					suggestedFix: "Fix.",
-					status: "open",
-				},
-				{
-					id: "finding-b",
-					severity: "low",
-					file: "README.md",
-					startLine: 2,
-					title: "Second finding",
-					explanation: "Second explanation.",
-					suggestedFix: "Second fix.",
-					status: "open",
-				},
-			],
-			"raw",
+			async () => true,
 		);
 
-		const ctx = makeCommandCtx({ cwd: makeRepo() });
-		const customOptions: any[] = [];
-		let dialog: any;
-		let updatedState: any;
-		ctx.ui.custom = vi.fn(async (factory: any, options: any) => {
-			customOptions.push(options);
-			if (customOptions.length === 1) {
-				dialog = factory(null, ctx.ui.theme, null, (updated: any) => {
-					updatedState = updated;
-				});
-				expect(dialog.render(120).join("\n")).toContain("1 / 2");
-				dialog.handleInput("q");
-				await new Promise((resolve) => setImmediate(resolve));
-				dialog.handleInput("n");
-				expect(dialog.render(120).join("\n")).toContain("2 / 2");
-				dialog.handleInput("\x1b");
-				return updatedState ?? state;
-			}
-			return "Why does this need a guard?";
+		expect(dialog.render(100).join("\n")).toContain("f: fix  d: discard  s: submit");
+		dialog.handleInput("f");
+		expect(result).toBeUndefined();
+		dialog.handleInput("s");
+		expect(result).toEqual(expect.objectContaining({ submitted: true }));
+	});
+
+	it("submits retained findings to a follow-up session", async () => {
+		const assistantText = [
+			"```review-findings",
+			JSON.stringify({
+				summary: "One issue found.",
+				findings: [
+					{
+						severity: "high",
+						file: "README.md",
+						startLine: 1,
+						title: "Risky README",
+						explanation: "The README says something risky.",
+						suggestedFix: "Make the README safer.",
+					},
+				],
+			}),
+			"```",
+		].join("\n");
+		const { pi, commands } = makePi();
+		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		reviewExtension(pi as never);
+
+		const reviewCtx = makeReviewCtx(assistantText, { cwd: makeRepo() });
+		reviewCtx.ui.custom = vi.fn(async (factory: any) => {
+			let result;
+			const component = factory(null, reviewCtx.ui.theme, null, (updated: any) => {
+				result = updated;
+			});
+			component.handleInput("s");
+			return result;
 		});
 
-		await showFindings(ctx, state);
+		const followupCtx = makeReviewCtx(undefined, { cwd: makeRepo() });
+		followupCtx.sendUserMessage = vi.fn(async () => {});
+		followupCtx.waitForIdle = vi.fn(async () => {});
+		let sessionCount = 0;
+		const ctx = makeCommandCtx({
+			cwd: makeRepo(),
+			newSession: vi.fn(async (options: any) => {
+				sessionCount += 1;
+				await options?.withSession?.(reviewCtx);
+				return { cancelled: false };
+			}),
+		});
+		reviewCtx.newSession = vi.fn(async (options: any) => {
+			await options?.withSession?.(followupCtx);
+			return { cancelled: false };
+		});
 
-		expect(customOptions[0]).toEqual(expect.objectContaining({ overlay: true }));
-		expect(customOptions[1]).toEqual(expect.objectContaining({ overlay: true }));
-		expect(complete).toHaveBeenCalled();
+		await commands.get("review").handler("", ctx);
+
+		expect(sessionCount).toBe(1);
+		expect(reviewCtx.newSession).toHaveBeenCalledTimes(1);
+		expect(followupCtx.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("You are now fixing the retained review findings."));
+		expect(followupCtx.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("Risky README"));
 	});
 
 	it("builds PR reviews from a URL and restores the original ref after review", async () => {

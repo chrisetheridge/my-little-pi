@@ -1,35 +1,15 @@
-import { complete, type AssistantMessage, type UserMessage } from "@mariozechner/pi-ai";
-import { DynamicBorder, type ExtensionCommandContext, type Theme } from "@mariozechner/pi-coding-agent";
-import { Box, Container, Input, Key, matchesKey, Spacer, Text, truncateToWidth, visibleWidth, type Focusable } from "@mariozechner/pi-tui";
+import { type ExtensionCommandContext, type Theme } from "@mariozechner/pi-coding-agent";
+import { Container, Key, matchesKey, Spacer, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { loadSourceExcerpt } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
-import { buildQnaPrompt, formatExcerptForPrompt } from "./prompt.ts";
-import { addQnaTurn, updateFindingStatus, updateReviewIndex, type ReviewRunState } from "./state.ts";
+import { discardFinding, updateReviewIndex, type ReviewRunState } from "./state.ts";
 
-const QNA_SYSTEM_PROMPT = "You answer focused questions about one code review finding.";
 const FINDINGS_VIEWPORT_LINES = 11;
 
-export function qnaAnswerFromResponse(
-	response: Pick<AssistantMessage, "stopReason" | "content" | "errorMessage">,
-): { ok: true; answer: string } | { ok: false; message: string } {
-	if (response.stopReason !== "stop") {
-		return {
-			ok: false,
-			message: `Could not answer finding question: ${response.errorMessage ?? `model stopped with ${response.stopReason}.`}`,
-		};
-	}
-
-	const answer = response.content
-		.filter((part): part is { type: "text"; text: string } => part.type === "text")
-		.map((part) => part.text)
-		.join("\n")
-		.trim();
-
-	if (!answer) {
-		return { ok: false, message: "Could not answer finding question: empty response." };
-	}
-	return { ok: true, answer };
-}
+export type FindingsDialogResult = {
+	submitted: boolean;
+	state: ReviewRunState;
+};
 
 export async function chooseInitialMode(
 	ctx: ExtensionCommandContext,
@@ -78,25 +58,25 @@ export async function showParseRecovery(
 	rawOutput: string,
 ): Promise<RecoveryChoice> {
 	const preview = rawOutput.slice(0, 2000);
-	const selected = await ctx.ui.select([
-		"Review findings parse failed.",
-		"",
-		error.message,
-		"",
-		"Raw output preview:",
-		preview || "(empty output)",
-	].join("\n"), [
-		"Retry extraction",
-		"Cancel",
-	]);
+	const selected = await ctx.ui.select(
+		[
+			"Review findings parse failed.",
+			"",
+			error.message,
+			"",
+			"Raw output preview:",
+			preview || "(empty output)",
+		].join("\n"),
+		[
+			"Retry extraction",
+			"Cancel",
+		],
+	);
 	return selected === "Retry extraction" ? "retry" : "cancel";
 }
 
 export class FindingsDialog {
 	private state: ReviewRunState;
-	private asking = false;
-	private activeQnaAbort?: AbortController;
-	private closeAfterQnaAbort = false;
 	private statusMessage?: string;
 	private scrollOffset = 0;
 	private lastWidth = 100;
@@ -105,39 +85,26 @@ export class FindingsDialog {
 		state: ReviewRunState,
 		private readonly cwd: string,
 		private readonly theme: Theme,
-		private readonly done: (result: ReviewRunState) => void,
+		private readonly done: (result: FindingsDialogResult) => void,
 		private readonly confirmClose: (state: ReviewRunState) => Promise<boolean>,
-		private readonly askQuestion: (
-			state: ReviewRunState,
-			findingId: string,
-			signal: AbortSignal,
-		) => Promise<ReviewRunState | undefined>,
 	) {
 		const maxIndex = Math.max(0, state.findings.length - 1);
-		this.state =
-			state.currentIndex < 0 || state.currentIndex > maxIndex ? updateReviewIndex(state, state.currentIndex) : state;
+		this.state = state.currentIndex < 0 || state.currentIndex > maxIndex ? updateReviewIndex(state, state.currentIndex) : state;
 	}
 
 	handleInput(data: string): void {
-		if (this.asking) {
-			if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-				this.closeAfterQnaAbort = true;
-				this.activeQnaAbort?.abort();
-			}
-			return;
-		}
 		if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-			const hasOpenFindings = this.state.findings.some((finding) => finding.status === "open");
-			if (!hasOpenFindings) {
-				this.done(this.state);
+			if (this.state.findings.length === 0) {
+				this.done({ submitted: false, state: this.state });
 				return;
 			}
-			this.statusMessage = "Confirming close with open findings...";
+			const openCount = this.state.findings.length;
+			this.statusMessage = "Confirming close with findings still open...";
 			this.invalidate();
 			this.confirmClose(this.state)
 				.then((confirmed) => {
 					if (confirmed) {
-						this.done(this.state);
+						this.done({ submitted: false, state: this.state });
 						return;
 					}
 					this.statusMessage = undefined;
@@ -149,6 +116,12 @@ export class FindingsDialog {
 				});
 			return;
 		}
+
+		if (matchesKey(data, Key.enter) || data === "s") {
+			this.done({ submitted: true, state: this.state });
+			return;
+		}
+
 		if (this.state.findings.length === 0) return;
 		if (matchesKey(data, Key.up) || data === "k") {
 			this.scrollBy(-1);
@@ -187,43 +160,22 @@ export class FindingsDialog {
 			this.invalidate();
 			return;
 		}
-		if (data === "i") {
+		if (data === "f") {
 			const finding = this.state.findings[this.state.currentIndex];
 			if (!finding) return;
+			this.statusMessage = "Marked fix.";
+			this.state = updateReviewIndex(this.state, this.state.currentIndex + 1);
 			this.scrollOffset = 0;
-			this.state = updateFindingStatus(this.state, finding.id, "ignored");
-			this.statusMessage = undefined;
 			this.invalidate();
 			return;
 		}
-		if (data === "a") {
-			this.statusMessage = "Actions are not designed yet.";
-			this.invalidate();
-			return;
-		}
-		if (data === "q") {
+		if (data === "d") {
 			const finding = this.state.findings[this.state.currentIndex];
 			if (!finding) return;
-			this.asking = true;
-			this.closeAfterQnaAbort = false;
-			this.activeQnaAbort = new AbortController();
+			this.state = discardFinding(this.state, finding.id);
+			this.statusMessage = "Discarded.";
+			this.scrollOffset = 0;
 			this.invalidate();
-			this.askQuestion(this.state, finding.id, this.activeQnaAbort.signal)
-				.then((updated) => {
-					if (updated) {
-						this.state = updateReviewIndex(updated, this.state.currentIndex);
-					}
-				})
-				.catch(() => undefined)
-				.finally(() => {
-					this.asking = false;
-					this.activeQnaAbort = undefined;
-					this.invalidate();
-					if (this.closeAfterQnaAbort) {
-						this.closeAfterQnaAbort = false;
-						this.done(this.state);
-					}
-			});
 		}
 	}
 
@@ -254,7 +206,7 @@ export class FindingsDialog {
 		lines.push(this.borderLine(width, "├", "─", "┤"));
 
 		if (visibleBodyLines.length === 0) {
-			lines.push(this.boxLine(width, this.theme.fg("dim", "No actionable findings found.")));
+			lines.push(this.boxLine(width, this.theme.fg("dim", "No findings.")));
 		} else {
 			for (const line of visibleBodyLines) {
 				lines.push(this.boxLine(width, line));
@@ -274,14 +226,13 @@ export class FindingsDialog {
 		const content = new Container();
 
 		if (this.state.findings.length === 0) {
-			content.addChild(new Text("No actionable findings found.", 0, 0));
+			content.addChild(new Text("No findings.", 0, 0));
 			return content;
 		}
 
 		const finding = this.state.findings[this.state.currentIndex]!;
 		const excerpt = loadSourceExcerpt(this.cwd, finding);
-		const qnaTurns = this.state.qnaByFindingId[finding.id] ?? [];
-		const status = finding.status === "ignored" ? "IGNORED" : "OPEN";
+		const status = "FIX";
 
 		content.addChild(
 			new Text(
@@ -316,14 +267,6 @@ export class FindingsDialog {
 				content.addChild(new Text(excerptLine.selected ? this.theme.fg("accent", lineText) : this.theme.fg("dim", lineText), 0, 0));
 			}
 		}
-		if (qnaTurns.length) {
-			content.addChild(new Spacer(1));
-			content.addChild(new Text(this.theme.fg("accent", `Questions & answers (${qnaTurns.length})`), 0, 0));
-			for (const turn of qnaTurns) {
-				content.addChild(new Text(`Q: ${turn.question}`, 0, 0));
-				content.addChild(new Text(this.theme.fg("dim", `A: ${turn.answer}`), 0, 0));
-			}
-		}
 		return content;
 	}
 
@@ -354,178 +297,41 @@ export class FindingsDialog {
 		this.invalidate();
 	}
 
-	private decorateBody(text: string): string {
-		const bg = (this.theme as { bg?: (role: string, value: string) => string }).bg;
-		return typeof bg === "function" ? bg.call(this.theme, "customMessageBg", text) : text;
-	}
-
 	private buildFooterHint(canScroll: boolean): string {
 		if (this.state.findings.length === 0) {
 			return "Esc: close";
 		}
 
 		const scrollHint = canScroll ? "  Up/Down or j/k: scroll  PgUp/PgDn: page  Home/End: top/bottom" : "";
-		return `n/right: next  p/left: previous  i: ignore  q: ask${this.asking ? "..." : ""}  a: actions unavailable${scrollHint}  Esc: close`;
-	}
-}
-
-class QuestionDialog extends Container implements Focusable {
-	private readonly input: Input;
-	private _focused = false;
-
-	get focused(): boolean {
-		return this._focused;
-	}
-
-	set focused(value: boolean) {
-		this._focused = value;
-		this.input.focused = value;
-	}
-
-	constructor(
-		private readonly theme: Theme,
-		title: string,
-		prompt: string,
-		prefill = "",
-		private readonly onSubmit: (value: string) => void,
-		private readonly onCancel: () => void,
-	) {
-		super();
-		this.input = new Input();
-		this.input.setValue(prefill);
-
-		this.addChild(new DynamicBorder((text: string) => this.theme.fg("accent", text)));
-		this.addChild(new Text(this.theme.fg("accent", title), 1, 0));
-		this.addChild(new Text(this.theme.fg("muted", prompt), 1, 0));
-		this.addChild(new Spacer(1));
-		const inputBox = new Box(1, 1, (text: string) => this.decorateBody(text));
-		inputBox.addChild(this.input);
-		this.addChild(inputBox);
-		this.addChild(new Spacer(1));
-		this.addChild(new Text(this.theme.fg("dim", "Enter: submit  Esc: cancel"), 1, 0));
-		this.addChild(new DynamicBorder((text: string) => this.theme.fg("accent", text)));
-		this.focused = true;
-	}
-
-	handleInput(data: string): void {
-		if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-			this.onCancel();
-			return;
-		}
-		if (matchesKey(data, Key.enter)) {
-			this.onSubmit(this.input.getValue().trim());
-			return;
-		}
-		this.input.handleInput(data);
-	}
-
-	private decorateBody(text: string): string {
-		const bg = (this.theme as { bg?: (role: string, value: string) => string }).bg;
-		return typeof bg === "function" ? bg.call(this.theme, "customMessageBg", text) : text;
+		return `f: fix  d: discard  s: submit${scrollHint}  Esc: close`;
 	}
 }
 
 export async function showFindings(
 	ctx: ExtensionCommandContext,
 	state: ReviewRunState,
-): Promise<ReviewRunState> {
+): Promise<FindingsDialogResult> {
 	let latest = state;
-	const askQuestion = async (
-		currentState: ReviewRunState,
-		findingId: string,
-		signal: AbortSignal,
-	): Promise<ReviewRunState | undefined> => {
-		latest = currentState;
-		const finding = currentState.findings.find((item) => item.id === findingId);
-		if (!finding) return undefined;
-		const question = await ctx.ui.custom<string | null>(
-			(_tui, theme, _keybindings, done) =>
-				new QuestionDialog(
-					theme,
-					"Ask about this finding",
-					[
-						`${finding.file}:${finding.startLine}`,
-						finding.title,
-						"",
-						"Ask a focused question about this finding.",
-					].join("\n"),
-					"",
-					(value) => done(value || null),
-					() => done(null),
-				),
-			{ overlay: true },
-		);
-		const trimmedQuestion = question?.trim();
-		if (!trimmedQuestion) return undefined;
-		if (signal.aborted) return undefined;
-		if (!ctx.model) {
-			ctx.ui.notify("Select a model before asking about a finding.", "error");
-			return undefined;
-		}
-
-		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
-		if (!auth.ok || !auth.apiKey) {
-			ctx.ui.notify(auth.ok ? `No API key for ${ctx.model.provider}` : auth.error, "error");
-			return undefined;
-		}
-		if (signal.aborted) return undefined;
-
-		const excerpt = loadSourceExcerpt(ctx.cwd, finding);
-		const userMessage: UserMessage = {
-			role: "user",
-			content: [{
-				type: "text",
-				text: buildQnaPrompt({
-					finding,
-					targetLabel: currentState.target.label,
-					sourceExcerpt: formatExcerptForPrompt(excerpt),
-					priorTurns: currentState.qnaByFindingId[finding.id] ?? [],
-					question: trimmedQuestion,
-				}),
-			}],
-			timestamp: Date.now(),
-		};
-
-		try {
-			const response = await complete(
-				ctx.model,
-				{ systemPrompt: QNA_SYSTEM_PROMPT, messages: [userMessage] },
-				{ apiKey: auth.apiKey, headers: auth.headers, signal },
-			);
-			if (signal.aborted) return undefined;
-			const answer = qnaAnswerFromResponse(response);
-			if (!answer.ok) {
-				if (response.stopReason !== "aborted") ctx.ui.notify(answer.message, "error");
-				return undefined;
-			}
-			latest = addQnaTurn(currentState, finding.id, { question: trimmedQuestion, answer: answer.answer, timestamp: Date.now() });
-			return latest;
-		} catch (error) {
-			if (signal.aborted) return undefined;
-			ctx.ui.notify(`Could not answer finding question: ${(error as Error).message}`, "error");
-			return undefined;
-		}
-	};
-	const result = await ctx.ui.custom<ReviewRunState>(
+	const result = await ctx.ui.custom<FindingsDialogResult>(
 		(_tui, theme, _keybindings, done) =>
 			new FindingsDialog(
 				latest,
 				ctx.cwd,
 				theme,
 				(updated) => {
-					latest = updated;
+					latest = updated.state;
 					done(updated);
 				},
 				(stateToClose) => {
-					const openCount = stateToClose.findings.filter((finding) => finding.status === "open").length;
-					return ctx.ui.confirm("Exit review?", `${openCount} finding${openCount === 1 ? "" : "s"} still open.`);
+					const openCount = stateToClose.findings.length;
+					return ctx.ui.confirm("Exit review?", `${openCount} finding${openCount === 1 ? "" : "s"} still retained.`);
 				},
-				askQuestion,
 			),
 		{ overlay: true, overlayOptions: { anchor: "center", width: "72%", minWidth: 72, maxHeight: "85%", margin: 2 } },
 	);
 
-	if (latest !== state) return latest;
-	if (result?.kind === "review-state") return result;
-	return latest;
+	if (result && typeof result === "object" && "submitted" in result && "state" in result) {
+		return result as FindingsDialogResult;
+	}
+	return { submitted: false, state: latest };
 }

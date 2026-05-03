@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ReviewFinding } from "./extensions/review/findings.ts";
 import type { ReviewTarget } from "./extensions/review/git.ts";
-import {
-	REVIEW_STATE_ENTRY_TYPE,
-	buildInitialReviewState,
-	rebuildLatestReviewState,
-	updateFindingStatus,
-	updateReviewIndex,
-} from "./extensions/review/state.ts";
+import { buildInitialReviewState, discardFinding, updateFindingStatus, updateReviewIndex } from "./extensions/review/state.ts";
 
 const target: ReviewTarget = {
 	mode: "uncommitted",
@@ -70,6 +64,16 @@ describe("review state", () => {
 		expect(updated.findings[1]).toBe(state.findings[1]);
 	});
 
+	it("discards findings immutably", () => {
+		const state = buildInitialReviewState(target, findings, "raw output");
+		const updated = discardFinding(state, "finding-a");
+
+		expect(updated.findings).toHaveLength(1);
+		expect(updated.findings[0]?.id).toBe("finding-b");
+		expect(updated.currentIndex).toBe(0);
+		expect(state.findings).toHaveLength(2);
+	});
+
 	it("clamps review index and updates immutably", () => {
 		const state = buildInitialReviewState(target, findings, "raw output");
 
@@ -80,111 +84,5 @@ describe("review state", () => {
 
 		expect(updateReviewIndex(state, -10).currentIndex).toBe(0);
 		expect(updateReviewIndex(state, 99).currentIndex).toBe(1);
-	});
-
-	it("rebuilds the latest persisted review state from custom entries", () => {
-		const older = buildInitialReviewState(target, findings, "older");
-		const latest = updateFindingStatus(buildInitialReviewState(target, findings, "latest"), "finding-a", "ignored");
-
-		expect(rebuildLatestReviewState([
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
-			{ type: "custom", customType: "other", data: latest },
-			{ type: "message", message: { role: "assistant" } },
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: { kind: "other" } },
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: latest },
-		])).toBe(latest);
-	});
-
-	it("rebuilds the latest persisted review state from custom messages", () => {
-		const older = buildInitialReviewState(target, findings, "older");
-		const latest = updateFindingStatus(buildInitialReviewState(target, findings, "latest"), "finding-a", "ignored");
-
-		expect(rebuildLatestReviewState([
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
-			{
-				type: "message",
-				message: {
-					role: "custom",
-					customType: REVIEW_STATE_ENTRY_TYPE,
-					content: "",
-					display: false,
-					details: latest,
-				},
-			},
-		])).toBe(latest);
-	});
-
-	it("rebuilds the latest persisted review state from durable custom message entries", () => {
-		const older = buildInitialReviewState(target, findings, "older");
-		const latest = updateFindingStatus(buildInitialReviewState(target, findings, "latest"), "finding-a", "ignored");
-
-		expect(rebuildLatestReviewState([
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
-			{ type: "custom_message", customType: REVIEW_STATE_ENTRY_TYPE, details: latest },
-		])).toBe(latest);
-	});
-
-	it("rebuilds a pre-Q&A review state without qnaByFindingId", () => {
-		const legacy = buildInitialReviewState(target, findings, "legacy") as Partial<ReturnType<typeof buildInitialReviewState>>;
-		delete legacy.qnaByFindingId;
-
-		const rebuilt = rebuildLatestReviewState([
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: legacy },
-		]);
-
-		expect(rebuilt).toEqual({
-			...legacy,
-			qnaByFindingId: {},
-		});
-	});
-
-	it("skips malformed newer review state entries when rebuilding", () => {
-		const older = buildInitialReviewState(target, findings, "older");
-
-		expect(rebuildLatestReviewState([
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: { kind: "review-state" } },
-		])).toBe(older);
-	});
-
-	it("skips newer review state entries with malformed findings", () => {
-		const older = buildInitialReviewState(target, findings, "older");
-		const malformed = {
-			...buildInitialReviewState(target, findings, "newer"),
-			findings: [{}],
-		};
-
-		expect(rebuildLatestReviewState([
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: malformed },
-		])).toBe(older);
-	});
-
-	it("skips newer review state entries with malformed qna turns", () => {
-		const older = buildInitialReviewState(target, findings, "older");
-		const malformed = {
-			...buildInitialReviewState(target, findings, "newer"),
-			qnaByFindingId: {
-				"finding-a": [{ question: "Why?", answer: "Because.", timestamp: "now" }],
-			},
-		};
-
-		expect(rebuildLatestReviewState([
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: malformed },
-		])).toBe(older);
-	});
-
-	it("skips newer review state entries with out-of-range current index", () => {
-		const older = buildInitialReviewState(target, findings, "older");
-		const malformed = {
-			...buildInitialReviewState(target, findings, "newer"),
-			currentIndex: findings.length,
-		};
-
-		expect(rebuildLatestReviewState([
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
-			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: malformed },
-		])).toBe(older);
 	});
 });

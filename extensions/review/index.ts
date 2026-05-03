@@ -1,6 +1,6 @@
 import { complete, type AssistantMessage, type UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { extractFindingsBlock, normalizeFindings } from "./findings.ts";
+import { extractFindingsBlock, loadSourceExcerpt, normalizeFindings } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
 import {
 	buildBaseReviewTarget,
@@ -12,8 +12,8 @@ import {
 	isGitRepository,
 	restoreOriginalRef,
 } from "./git.ts";
-import { buildFindingsFormatterPrompt, buildReviewPrompt } from "./prompt.ts";
-import { REVIEW_STATE_ENTRY_TYPE, buildInitialReviewState } from "./state.ts";
+import { buildFindingsFormatterPrompt, buildReviewFixPrompt, buildReviewPrompt, formatExcerptForPrompt } from "./prompt.ts";
+import { buildInitialReviewState } from "./state.ts";
 import { chooseInitialMode, confirmPreflight, showFindings, showParseRecovery } from "./ui.ts";
 
 function lastAssistantText(ctx: Pick<ExtensionCommandContext, "sessionManager">): string {
@@ -152,6 +152,7 @@ async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Pr
 	}
 
 	const prompt = buildReviewPrompt(target);
+	let restoreAttempted = false;
 	await ctx.newSession({
 		withSession: async (reviewCtx) => {
 			try {
@@ -181,24 +182,33 @@ async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Pr
 				}
 
 				const state = buildInitialReviewState(target, findings, output);
-				await reviewCtx.sendMessage({
-					customType: REVIEW_STATE_ENTRY_TYPE,
-					content: "",
-					display: false,
-					details: state,
-				});
-				const updated = await showFindings(reviewCtx, state);
-				if (updated !== state) {
-					await reviewCtx.sendMessage({
-						customType: REVIEW_STATE_ENTRY_TYPE,
-						content: "",
-						display: false,
-						details: updated,
-					});
+				const result = await showFindings(reviewCtx, state);
+				if (!result.submitted) return;
+				if (result.state.findings.length === 0) {
+					reviewCtx.ui.notify("no findings", "info");
+					return;
 				}
+
+				const fixPrompt = buildReviewFixPrompt({
+					targetLabel: target.label,
+					findings: result.state.findings.map((finding) => ({
+						finding,
+						sourceExcerpt: formatExcerptForPrompt(loadSourceExcerpt(cwd, finding)),
+					})),
+				});
+
+				await reviewCtx.newSession({
+					withSession: async (fixCtx) => {
+						await fixCtx.sendUserMessage(fixPrompt);
+						await fixCtx.waitForIdle();
+					},
+				});
 			} finally {
-				if (originalRef && !restoreOriginalRef(cwd, originalRef)) {
-					reviewCtx.ui.notify(`Failed to restore original git ref ${originalRef}.`, "error");
+				if (originalRef && !restoreAttempted) {
+					restoreAttempted = true;
+					if (!restoreOriginalRef(cwd, originalRef)) {
+						reviewCtx.ui.notify(`Failed to restore original git ref ${originalRef}.`, "error");
+					}
 				}
 			}
 		},

@@ -1,6 +1,5 @@
 import type { ReviewFinding, SourceExcerpt } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
-import type { ReviewQnaTurn } from "./state.ts";
 
 export function buildReviewPrompt(target: ReviewTarget): string {
 	return [
@@ -82,32 +81,31 @@ export function formatExcerptForPrompt(excerpt: SourceExcerpt): string {
 	return excerpt.lines.map((line) => `${line.selected ? ">" : " "} ${line.number}: ${line.text}`).join("\n");
 }
 
-export function buildQnaPrompt(input: {
-	finding: ReviewFinding;
+export function buildReviewFixPrompt(input: {
 	targetLabel: string;
-	sourceExcerpt: string;
-	priorTurns: ReviewQnaTurn[];
-	question: string;
+	findings: Array<{
+		finding: ReviewFinding;
+		sourceExcerpt: string;
+	}>;
 }): string {
-	const prior = input.priorTurns.length
-		? input.priorTurns.map((turn) => `Q: ${turn.question}\nA: ${turn.answer}`).join("\n\n")
-		: "No prior Q&A for this finding.";
 	return [
-		"Answer only about this selected finding. Do not perform a new review and do not create new findings.",
+		"You are now fixing the retained review findings.",
+		"Make the code changes directly.",
+		"Do not add new review findings unless you discover a blocker.",
+		"Do not summarize; edit the code.",
+		"",
 		`Review target: ${input.targetLabel}`,
 		"",
-		`Finding: ${input.finding.title}`,
-		`Severity: ${input.finding.severity}`,
-		`Location: ${input.finding.file}:${input.finding.startLine}`,
-		`Explanation: ${input.finding.explanation}`,
-		`Suggested fix: ${input.finding.suggestedFix}`,
-		"",
-		"Source excerpt:",
-		input.sourceExcerpt,
-		"",
-		"Prior Q&A:",
-		prior,
-		"",
-		`User question: ${input.question}`,
+		"Findings to fix:",
+		...input.findings.map(({ finding, sourceExcerpt }, index) => [
+			`${index + 1}. [${finding.severity}] ${finding.file}:${finding.startLine}`,
+			`Title: ${finding.title}`,
+			`Why: ${finding.explanation}`,
+			`Suggested fix: ${finding.suggestedFix}`,
+			sourceExcerpt ? `Source:\n${sourceExcerpt}` : undefined,
+			"",
+		]
+			.filter((part): part is string => part !== undefined)
+			.join("\n")),
 	].join("\n");
 }
