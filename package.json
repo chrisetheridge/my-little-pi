@@ -28,6 +28,7 @@
       "./extensions/downtime/index.ts",
       "./extensions/little-footer/index.ts",
       "./extensions/little-renderer/index.ts",
+      "./extensions/review/index.ts",
       "./extensions/little-spinner/index.ts"
     ],
     "skills": [
