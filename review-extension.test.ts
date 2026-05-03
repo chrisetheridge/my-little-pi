@@ -367,12 +367,14 @@ describe("review extension", () => {
 				status: "open",
 			},
 		], "raw");
-		const dialog = new FindingsDialog(
-			state,
-			{ fg: (role: string, text: string) => role === "dim" ? `<dim>${text}</dim>` : text } as never,
-			vi.fn(),
-			vi.fn(),
-		);
+			const dialog = new FindingsDialog(
+				state,
+				makeRepo(),
+				{ fg: (role: string, text: string) => role === "dim" ? `<dim>${text}</dim>` : text } as never,
+				vi.fn(),
+				async () => true,
+				async () => undefined,
+			);
 
 		expect(dialog.render(100).join("\n")).toContain("a: actions unavailable");
 

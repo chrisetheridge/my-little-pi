@@ -100,13 +100,15 @@ export class FindingsDialog implements Component {
 	private closeAfterQnaAbort = false;
 	private statusMessage?: string;
 
-	constructor(
-		state: ReviewRunState,
-		private readonly theme: Theme,
-		private readonly done: (result: ReviewRunState) => void,
-		private readonly askQuestion: (
+		constructor(
 			state: ReviewRunState,
-			findingId: string,
+			private readonly cwd: string,
+			private readonly theme: Theme,
+			private readonly done: (result: ReviewRunState) => void,
+			private readonly confirmClose: (state: ReviewRunState) => Promise<boolean>,
+			private readonly askQuestion: (
+				state: ReviewRunState,
+				findingId: string,
 			signal: AbortSignal,
 		) => Promise<ReviewRunState | undefined>,
 	) {
@@ -123,10 +125,29 @@ export class FindingsDialog implements Component {
 			}
 			return;
 		}
-		if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
-			this.done(this.state);
-			return;
-		}
+			if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+				const hasOpenFindings = this.state.findings.some((finding) => finding.status === "open");
+				if (!hasOpenFindings) {
+					this.done(this.state);
+					return;
+				}
+				this.statusMessage = "Confirming close with open findings...";
+				this.invalidate();
+				this.confirmClose(this.state)
+					.then((confirmed) => {
+						if (confirmed) {
+							this.done(this.state);
+							return;
+						}
+						this.statusMessage = undefined;
+						this.invalidate();
+					})
+					.catch(() => {
+						this.statusMessage = undefined;
+						this.invalidate();
+					});
+				return;
+			}
 		if (this.state.findings.length === 0) return;
 		if (matchesKey(data, Key.right) || data === "n") {
 			this.state = updateReviewIndex(this.state, this.state.currentIndex + 1);
@@ -203,14 +224,30 @@ export class FindingsDialog implements Component {
 			push();
 			for (const line of wrapTextWithAnsi(finding.explanation, innerWidth)) push(line);
 			push();
-			push("Suggested fix:");
-			for (const line of wrapTextWithAnsi(finding.suggestedFix, innerWidth)) push(line);
-			push();
-			const qnaTurns = this.state.qnaByFindingId[finding.id] ?? [];
-			if (qnaTurns.length) {
-				push(`Q&A turns: ${qnaTurns.length}`);
+				push("Suggested fix:");
+				for (const line of wrapTextWithAnsi(finding.suggestedFix, innerWidth)) push(line);
 				push();
-			}
+				const excerpt = loadSourceExcerpt(this.cwd, finding);
+				push("Source:");
+				if (!excerpt.available) {
+					push(this.theme.fg("dim", excerpt.message ?? "Source unavailable."));
+				} else {
+					for (const excerptLine of excerpt.lines) {
+						const marker = excerptLine.selected ? ">" : " ";
+						const text = `${marker} ${String(excerptLine.number).padStart(4, " ")}: ${excerptLine.text}`;
+						push(excerptLine.selected ? this.theme.fg("accent", text) : this.theme.fg("dim", text));
+					}
+				}
+				push();
+				const qnaTurns = this.state.qnaByFindingId[finding.id] ?? [];
+				if (qnaTurns.length) {
+					push(`Q&A (${qnaTurns.length})`);
+					for (const turn of qnaTurns) {
+						for (const line of wrapTextWithAnsi(`Q: ${turn.question}`, innerWidth)) push(line);
+						for (const line of wrapTextWithAnsi(`A: ${turn.answer}`, innerWidth)) push(this.theme.fg("dim", line));
+					}
+					push();
+				}
 			if (this.statusMessage) {
 				push(this.theme.fg("dim", this.statusMessage));
 				push();
@@ -294,11 +331,14 @@ export async function showFindings(
 			return undefined;
 		}
 	};
-	const result = await ctx.ui.custom<ReviewRunState>(
-		(_tui, theme, _keybindings, done) => new FindingsDialog(latest, theme, (updated) => {
-			latest = updated;
-			done(updated);
-		}, askQuestion),
+		const result = await ctx.ui.custom<ReviewRunState>(
+			(_tui, theme, _keybindings, done) => new FindingsDialog(latest, ctx.cwd, theme, (updated) => {
+				latest = updated;
+				done(updated);
+			}, (stateToClose) => {
+				const openCount = stateToClose.findings.filter((finding) => finding.status === "open").length;
+				return ctx.ui.confirm("Exit review?", `${openCount} finding${openCount === 1 ? "" : "s"} still open.`);
+			}, askQuestion),
 		{
 			overlay: true,
 			overlayOptions: { width: "80%", minWidth: 60, maxHeight: "70%", anchor: "bottom-center", margin: 1 },

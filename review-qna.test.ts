@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { ReviewFinding } from "./extensions/review/findings.ts";
 import type { ReviewTarget } from "./extensions/review/git.ts";
@@ -26,6 +29,26 @@ const target: ReviewTarget = {
 	stagedCount: 1,
 	unstagedCount: 0,
 };
+
+function makeSourceRoot(): string {
+	const cwd = mkdtempSync(join(tmpdir(), "review-qna-"));
+	mkdirSync(join(cwd, "src"), { recursive: true });
+	writeFileSync(join(cwd, "src", "a.ts"), [
+		"const one = 1;",
+		"const two = 2;",
+		"const three = 3;",
+		"const four = 4;",
+		"const five = 5;",
+		"const six = 6;",
+		"const seven = 7;",
+		"const eight = 8;",
+		"const nine = 9;",
+		"return items[index];",
+		"const eleven = 11;",
+		"const twelve = 12;",
+	].join("\n"), "utf-8");
+	return cwd;
+}
 
 describe("review Q&A", () => {
 	it("builds a prompt scoped to the selected finding", () => {
@@ -104,15 +127,17 @@ describe("review Q&A", () => {
 		let signal: AbortSignal | undefined;
 		let resolveQuestion: ((value: undefined) => void) | undefined;
 		let doneState: unknown;
-		const dialog = new FindingsDialog(
-			state,
-			{ fg: (_role: string, text: string) => text } as never,
-			(result) => {
-				doneState = result;
-			},
-			(_currentState, _findingId, abortSignal) => {
-				signal = abortSignal;
-				return new Promise((resolve) => {
+			const dialog = new FindingsDialog(
+				state,
+				makeSourceRoot(),
+				{ fg: (_role: string, text: string) => text } as never,
+				(result) => {
+					doneState = result;
+				},
+				async () => true,
+				(_currentState, _findingId, abortSignal) => {
+					signal = abortSignal;
+					return new Promise((resolve) => {
 					resolveQuestion = resolve;
 				});
 			},
@@ -132,15 +157,17 @@ describe("review Q&A", () => {
 	it("preserves dialog-local mutations when Q&A updates state", async () => {
 		const state = buildInitialReviewState(target, [finding], "raw output");
 		let doneState: any;
-		const dialog = new FindingsDialog(
-			state,
-			{ fg: (_role: string, text: string) => text } as never,
-			(result) => {
-				doneState = result;
-			},
-			async (currentState, findingId) => addQnaTurn(currentState, findingId, {
-				question: "Why?",
-				answer: "Because.",
+			const dialog = new FindingsDialog(
+				state,
+				makeSourceRoot(),
+				{ fg: (_role: string, text: string) => text } as never,
+				(result) => {
+					doneState = result;
+				},
+				async () => true,
+				async (currentState, findingId) => addQnaTurn(currentState, findingId, {
+					question: "Why?",
+					answer: "Because.",
 				timestamp: 10,
 			}),
 		);
@@ -151,8 +178,56 @@ describe("review Q&A", () => {
 		dialog.handleInput("\x1b");
 
 		expect(doneState.findings[0]?.status).toBe("ignored");
-		expect(doneState.qnaByFindingId["finding-a"]).toEqual([
-			{ question: "Why?", answer: "Because.", timestamp: 10 },
-		]);
+			expect(doneState.qnaByFindingId["finding-a"]).toEqual([
+				{ question: "Why?", answer: "Because.", timestamp: 10 },
+			]);
+		});
+
+		it("renders source excerpts and Q&A content in the finding dialog", () => {
+			const state = addQnaTurn(buildInitialReviewState(target, [finding], "raw output"), "finding-a", {
+				question: "Why?",
+				answer: "Because it can crash.",
+				timestamp: 10,
+			});
+			const dialog = new FindingsDialog(
+				state,
+				makeSourceRoot(),
+				{ fg: (_role: string, text: string) => text } as never,
+				() => undefined,
+				async () => true,
+				async () => undefined,
+			);
+
+			const rendered = dialog.render(100).join("\n");
+
+			expect(rendered).toContain("Source:");
+			expect(rendered).toContain("return items[index];");
+			expect(rendered).toContain("Q: Why?");
+			expect(rendered).toContain("A: Because it can crash.");
+		});
+
+		it("confirms before closing when findings remain open", async () => {
+			const state = buildInitialReviewState(target, [finding], "raw output");
+			let confirmCalls = 0;
+			let doneState: unknown;
+			const dialog = new FindingsDialog(
+				state,
+				makeSourceRoot(),
+				{ fg: (_role: string, text: string) => text } as never,
+				(result) => {
+					doneState = result;
+				},
+				async () => {
+					confirmCalls += 1;
+					return false;
+				},
+				async () => undefined,
+			);
+
+			dialog.handleInput("\x1b");
+			await new Promise((resolve) => setTimeout(resolve, 0));
+
+			expect(confirmCalls).toBe(1);
+			expect(doneState).toBeUndefined();
+		});
 	});
-});
