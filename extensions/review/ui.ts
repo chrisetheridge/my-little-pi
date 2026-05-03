@@ -1,7 +1,12 @@
+import { complete, type UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component } from "@mariozechner/pi-tui";
+import { loadSourceExcerpt } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
-import { updateFindingStatus, updateReviewIndex, type ReviewRunState } from "./state.ts";
+import { buildQnaPrompt, formatExcerptForPrompt } from "./prompt.ts";
+import { addQnaTurn, updateFindingStatus, updateReviewIndex, type ReviewRunState } from "./state.ts";
+
+const QNA_SYSTEM_PROMPT = "You answer focused questions about one code review finding.";
 
 export async function chooseInitialMode(ctx: ExtensionCommandContext): Promise<"uncommitted" | "base" | null> {
 	const selected = await ctx.ui.select("Review target", ["Uncommitted changes", "Local changes against base"]);
@@ -35,11 +40,13 @@ class FindingsDialog implements Component {
 	private state: ReviewRunState;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
+	private asking = false;
 
 	constructor(
 		state: ReviewRunState,
 		private readonly theme: Theme,
 		private readonly done: (result: ReviewRunState) => void,
+		private readonly askQuestion: (findingId: string) => Promise<ReviewRunState | undefined>,
 	) {
 		const maxIndex = Math.max(0, state.findings.length - 1);
 		this.state =
@@ -47,6 +54,7 @@ class FindingsDialog implements Component {
 	}
 
 	handleInput(data: string): void {
+		if (this.asking) return;
 		if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
 			this.done(this.state);
 			return;
@@ -67,6 +75,24 @@ class FindingsDialog implements Component {
 			if (!finding) return;
 			this.state = updateFindingStatus(this.state, finding.id, "ignored");
 			this.invalidate();
+			return;
+		}
+		if (data === "q") {
+			const finding = this.state.findings[this.state.currentIndex];
+			if (!finding) return;
+			this.asking = true;
+			this.invalidate();
+			this.askQuestion(finding.id)
+				.then((updated) => {
+					if (updated) {
+						this.state = updateReviewIndex(updated, this.state.currentIndex);
+					}
+				})
+				.catch(() => undefined)
+				.finally(() => {
+					this.asking = false;
+					this.invalidate();
+				});
 		}
 	}
 
@@ -99,7 +125,12 @@ class FindingsDialog implements Component {
 			push("Suggested fix:");
 			for (const line of wrapTextWithAnsi(finding.suggestedFix, innerWidth)) push(line);
 			push();
-			push("n/right: next  p/left: previous  i: ignore  Esc: close");
+			const qnaTurns = this.state.qnaByFindingId[finding.id] ?? [];
+			if (qnaTurns.length) {
+				push(`Q&A turns: ${qnaTurns.length}`);
+				push();
+			}
+			push(`n/right: next  p/left: previous  i: ignore  q: ask${this.asking ? "..." : ""}  Esc: close`);
 		}
 
 		lines.push(`+${"-".repeat(innerWidth + 2)}+`);
@@ -119,17 +150,70 @@ export async function showFindings(
 	state: ReviewRunState,
 ): Promise<ReviewRunState> {
 	let latest = state;
+	const askQuestion = async (findingId: string): Promise<ReviewRunState | undefined> => {
+		const question = (await ctx.ui.input("Ask about this finding", ""))?.trim();
+		if (!question) return undefined;
+		const finding = latest.findings.find((item) => item.id === findingId);
+		if (!finding) return undefined;
+		if (!ctx.model) {
+			ctx.ui.notify("Select a model before asking about a finding.", "error");
+			return undefined;
+		}
+
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+		if (!auth.ok || !auth.apiKey) {
+			ctx.ui.notify(auth.ok ? `No API key for ${ctx.model.provider}` : auth.error, "error");
+			return undefined;
+		}
+
+		const excerpt = loadSourceExcerpt(ctx.cwd, finding);
+		const userMessage: UserMessage = {
+			role: "user",
+			content: [{
+				type: "text",
+				text: buildQnaPrompt({
+					finding,
+					targetLabel: latest.target.label,
+					sourceExcerpt: formatExcerptForPrompt(excerpt),
+					priorTurns: latest.qnaByFindingId[finding.id] ?? [],
+					question,
+				}),
+			}],
+			timestamp: Date.now(),
+		};
+
+		try {
+			const response = await complete(
+				ctx.model,
+				{ systemPrompt: QNA_SYSTEM_PROMPT, messages: [userMessage] },
+				{ apiKey: auth.apiKey, headers: auth.headers },
+			);
+			if (response.stopReason === "aborted") return undefined;
+
+			const answer = response.content
+				.filter((part): part is { type: "text"; text: string } => part.type === "text")
+				.map((part) => part.text)
+				.join("\n")
+				.trim();
+			latest = addQnaTurn(latest, finding.id, { question, answer, timestamp: Date.now() });
+			return latest;
+		} catch (error) {
+			ctx.ui.notify(`Could not answer finding question: ${(error as Error).message}`, "error");
+			return undefined;
+		}
+	};
 	const result = await ctx.ui.custom<ReviewRunState>(
 		(_tui, theme, _keybindings, done) => new FindingsDialog(latest, theme, (updated) => {
 			latest = updated;
 			done(updated);
-		}),
+		}, askQuestion),
 		{
 			overlay: true,
 			overlayOptions: { width: "80%", minWidth: 60, maxHeight: "70%", anchor: "bottom-center", margin: 1 },
 		},
 	);
 
+	if (latest !== state) return latest;
 	if (result?.kind === "review-state") return result;
 	return latest;
 }

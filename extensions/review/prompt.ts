@@ -1,4 +1,6 @@
+import type { ReviewFinding, SourceExcerpt } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
+import type { ReviewQnaTurn } from "./state.ts";
 
 export function buildReviewPrompt(target: ReviewTarget): string {
 	return [
@@ -36,5 +38,40 @@ export function buildReviewPrompt(target: ReviewTarget): string {
 		"If there are no actionable findings, return findings as an empty array.",
 		"",
 		target.promptContext,
+	].join("\n");
+}
+
+export function formatExcerptForPrompt(excerpt: SourceExcerpt): string {
+	if (!excerpt.available) return excerpt.message ?? "Source unavailable.";
+	return excerpt.lines.map((line) => `${line.selected ? ">" : " "} ${line.number}: ${line.text}`).join("\n");
+}
+
+export function buildQnaPrompt(input: {
+	finding: ReviewFinding;
+	targetLabel: string;
+	sourceExcerpt: string;
+	priorTurns: ReviewQnaTurn[];
+	question: string;
+}): string {
+	const prior = input.priorTurns.length
+		? input.priorTurns.map((turn) => `Q: ${turn.question}\nA: ${turn.answer}`).join("\n\n")
+		: "No prior Q&A for this finding.";
+	return [
+		"Answer only about this selected finding. Do not perform a new review and do not create new findings.",
+		`Review target: ${input.targetLabel}`,
+		"",
+		`Finding: ${input.finding.title}`,
+		`Severity: ${input.finding.severity}`,
+		`Location: ${input.finding.file}:${input.finding.startLine}`,
+		`Explanation: ${input.finding.explanation}`,
+		`Suggested fix: ${input.finding.suggestedFix}`,
+		"",
+		"Source excerpt:",
+		input.sourceExcerpt,
+		"",
+		"Prior Q&A:",
+		prior,
+		"",
+		`User question: ${input.question}`,
 	].join("\n");
 }

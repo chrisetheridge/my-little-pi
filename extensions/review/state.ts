@@ -61,6 +61,16 @@ export function updateReviewIndex(state: ReviewRunState, index: number): ReviewR
 	};
 }
 
+export function addQnaTurn(state: ReviewRunState, findingId: string, turn: ReviewQnaTurn): ReviewRunState {
+	return {
+		...state,
+		qnaByFindingId: {
+			...state.qnaByFindingId,
+			[findingId]: [...(state.qnaByFindingId[findingId] ?? []), turn],
+		},
+	};
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
