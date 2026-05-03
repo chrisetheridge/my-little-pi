@@ -229,10 +229,28 @@ export function buildBaseReviewTarget(cwd: string, baseRef: string): ReviewTarge
 }
 
 export function buildCommitReviewTarget(cwd: string, commitRef: string): ReviewTarget {
-	const show = git(cwd, ["show", "--stat", "--patch", "--find-renames", commitRef]).stdout;
+	const resolved = git(cwd, ["rev-parse", "--verify", `${commitRef}^{commit}`]);
+	const resolvedCommit = resolved.stdout.trim();
+	if (!resolved.ok || !resolvedCommit) throw new Error(`Could not read commit ${commitRef}`);
+
+	const parentLine = git(cwd, ["rev-list", "--parents", "-n", "1", resolvedCommit]).stdout.trim();
+	const [, ...parents] = parentLine.split(/\s+/).filter(Boolean);
+	const firstParent = parents[0];
+	const isRootCommit = !firstParent;
+	const isMergeCommit = parents.length > 1;
+
+	const show = isRootCommit
+		? git(cwd, ["show", "--stat", "--patch", "--find-renames", "--root", resolvedCommit]).stdout
+		: isMergeCommit
+			? git(cwd, ["diff", "--stat", "--patch", "--find-renames", `${firstParent}..${resolvedCommit}`]).stdout
+			: git(cwd, ["show", "--stat", "--patch", "--find-renames", resolvedCommit]).stdout;
 	if (!show.trim()) throw new Error(`Could not read commit ${commitRef}`);
 
-	const files = lines(git(cwd, ["diff-tree", "--no-commit-id", "--name-only", "-r", commitRef]).stdout);
+	const files = isRootCommit
+		? lines(git(cwd, ["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", resolvedCommit]).stdout)
+		: isMergeCommit
+			? lines(git(cwd, ["diff", "--name-only", `${firstParent}..${resolvedCommit}`]).stdout)
+			: lines(git(cwd, ["diff-tree", "--no-commit-id", "--name-only", "-r", resolvedCommit]).stdout);
 
 	return {
 		mode: "commit",
@@ -240,10 +258,19 @@ export function buildCommitReviewTarget(cwd: string, commitRef: string): ReviewT
 		promptContext: [
 			"# Review target: specific commit",
 			`Commit ref: ${commitRef}`,
+			`Resolved commit: ${resolvedCommit}`,
+			isRootCommit ? "Root commit: true" : undefined,
+			isMergeCommit ? `First-parent diff: ${firstParent}..${resolvedCommit}` : undefined,
 			"",
-			"## git show",
+			isRootCommit
+				? "## git show --root"
+				: isMergeCommit
+					? `## git diff ${firstParent}..${resolvedCommit} (first-parent)`
+					: "## git show",
 			show,
-		].join("\n"),
+		]
+			.filter((part): part is string => part !== undefined)
+			.join("\n"),
 		changedFiles: uniqueSorted(files),
 		stagedCount: 0,
 		unstagedCount: 0,

@@ -19,6 +19,14 @@ function run(cwd: string, args: string[]): void {
 	}
 }
 
+function runOutput(cwd: string, args: string[]): string {
+	const result = spawnSync("git", args, { cwd, encoding: "utf-8", stdio: "pipe" });
+	if (result.status !== 0) {
+		throw new Error(result.stderr || result.stdout);
+	}
+	return result.stdout.trim();
+}
+
 function makeRepo(): string {
 	const cwd = mkdtempSync(join(tmpdir(), "review-git-"));
 	run(cwd, ["init", "-b", "main"]);
@@ -120,7 +128,7 @@ describe("review git helpers", () => {
 		const cwd = makeRepo();
 		writeFileSync(join(cwd, "README.md"), "hello\nsecond\n", "utf-8");
 		run(cwd, ["commit", "-am", "second"]);
-		const commit = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf-8" }).stdout.trim();
+		const commit = runOutput(cwd, ["rev-parse", "HEAD"]);
 
 		const target = buildCommitReviewTarget(cwd, commit);
 
@@ -129,5 +137,45 @@ describe("review git helpers", () => {
 		expect(target.changedFiles).toEqual(["README.md"]);
 		expect(target.promptContext).toContain("git show");
 		expect(target.promptContext).toContain("second");
+	});
+
+	it("includes changed files for a root commit target", () => {
+		const cwd = makeRepo();
+		const commit = runOutput(cwd, ["rev-list", "--max-parents=0", "HEAD"]);
+
+		const target = buildCommitReviewTarget(cwd, commit);
+
+		expect(target.mode).toBe("commit");
+		expect(target.changedFiles).toEqual(["README.md"]);
+		expect(target.promptContext).toContain("hello");
+	});
+
+	it("rejects blob refs instead of creating a commit target", () => {
+		const cwd = makeRepo();
+		const blob = runOutput(cwd, ["hash-object", "-w", "README.md"]);
+
+		expect(() => buildCommitReviewTarget(cwd, blob)).toThrow(`Could not read commit ${blob}`);
+	});
+
+	it("builds merge commit targets from the first-parent diff", () => {
+		const cwd = makeRepo();
+		run(cwd, ["checkout", "-b", "feature"]);
+		writeFileSync(join(cwd, "feature.txt"), "feature change\n", "utf-8");
+		run(cwd, ["add", "feature.txt"]);
+		run(cwd, ["commit", "-m", "feature change"]);
+		run(cwd, ["checkout", "main"]);
+		writeFileSync(join(cwd, "main.txt"), "main change\n", "utf-8");
+		run(cwd, ["add", "main.txt"]);
+		run(cwd, ["commit", "-m", "main change"]);
+		run(cwd, ["merge", "--no-ff", "feature", "-m", "merge feature"]);
+		const commit = runOutput(cwd, ["rev-parse", "HEAD"]);
+
+		const target = buildCommitReviewTarget(cwd, commit);
+
+		expect(target.mode).toBe("commit");
+		expect(target.changedFiles).toEqual(["feature.txt"]);
+		expect(target.promptContext).toContain("First-parent diff:");
+		expect(target.promptContext).toContain("feature change");
+		expect(target.promptContext).toContain("diff --git");
 	});
 });
