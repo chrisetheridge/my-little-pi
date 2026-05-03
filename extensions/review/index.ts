@@ -76,18 +76,28 @@ async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Pr
 		return;
 	}
 
-	let output = "";
 	const prompt = buildReviewPrompt(target);
-	await ctx.fork(leafId, {
+	const result = await ctx.fork(leafId, {
 		position: "at",
 		withSession: async (reviewCtx) => {
 			await reviewCtx.sendUserMessage(prompt);
 			await reviewCtx.waitForIdle();
-			output = lastAssistantText(reviewCtx);
+			const output = lastAssistantText(reviewCtx);
+
+			let findings;
+			try {
+				const parsed = extractFindingsBlock(output);
+				findings = normalizeFindings(parsed.findings);
+			} catch {
+				reviewCtx.ui.notify("Could not parse review findings.", "error");
+				return;
+			}
+
+			await showFindings(reviewCtx, target, findings);
 		},
 	});
 
-	const parsed = extractFindingsBlock(output);
-	const findings = normalizeFindings(parsed.findings);
-	await showFindings(ctx, target, findings);
+	if (result.cancelled) {
+		ctx.ui.notify("Review cancelled.", "info");
+	}
 }

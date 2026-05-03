@@ -1,3 +1,7 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(() => {
@@ -13,6 +17,48 @@ function makePi() {
 		}),
 	};
 	return { pi, commands };
+}
+
+function run(cwd: string, args: string[]): void {
+	const result = spawnSync("git", args, { cwd, stdio: "pipe" });
+	if (result.status !== 0) {
+		throw new Error(result.stderr.toString() || result.stdout.toString());
+	}
+}
+
+function makeRepo(): string {
+	const cwd = mkdtempSync(join(tmpdir(), "review-extension-"));
+	run(cwd, ["init", "-b", "main"]);
+	run(cwd, ["config", "user.email", "test@example.com"]);
+	run(cwd, ["config", "user.name", "Test User"]);
+	writeFileSync(join(cwd, "README.md"), "hello\n", "utf-8");
+	run(cwd, ["add", "README.md"]);
+	run(cwd, ["commit", "-m", "initial"]);
+	writeFileSync(join(cwd, "README.md"), "hello\nreview me\n", "utf-8");
+	return cwd;
+}
+
+function makeReviewCtx(assistantText = '```review-findings\n{"summary":"none","findings":[]}\n```', overrides: Partial<any> = {}) {
+	return {
+		...makeCommandCtx({ cwd: "/tmp/replacement-project" }),
+		sendUserMessage: vi.fn(async () => {}),
+		waitForIdle: vi.fn(async () => {}),
+		sessionManager: {
+			getBranch: () => [
+				{ id: "root", type: "message", message: { role: "user", content: [{ type: "text", text: "start" }] } },
+				{
+					id: "assistant",
+					type: "message",
+					message: {
+						role: "assistant",
+						stopReason: "stop",
+						content: [{ type: "text", text: assistantText }],
+					},
+				},
+			],
+		},
+		...overrides,
+	};
 }
 
 function makeCommandCtx(overrides: Partial<any> = {}) {
@@ -34,33 +80,7 @@ function makeCommandCtx(overrides: Partial<any> = {}) {
 			],
 		},
 		fork: vi.fn(async (_entryId: string, options: any) => {
-			await options?.withSession?.({
-				sendUserMessage: vi.fn(async () => {}),
-				waitForIdle: vi.fn(async () => {}),
-				sessionManager: {
-					getBranch: () => [
-						{
-							id: "root",
-							type: "message",
-							message: { role: "user", content: [{ type: "text", text: "start" }] },
-						},
-						{
-							id: "assistant",
-							type: "message",
-							message: {
-								role: "assistant",
-								stopReason: "stop",
-								content: [
-									{
-										type: "text",
-										text: '```review-findings\n{"summary":"none","findings":[]}\n```',
-									},
-								],
-							},
-						},
-					],
-				},
-			});
+			await options?.withSession?.(makeReviewCtx());
 			return { cancelled: false };
 		}),
 		waitForIdle: vi.fn(async () => {}),
@@ -99,5 +119,62 @@ describe("review extension", () => {
 		await commands.get("review").handler("", ctx);
 
 		expect(ctx.ui.notify).toHaveBeenCalledWith("Select a model before running /review.", "error");
+	});
+
+	it("shows findings with the replacement review context after fork", async () => {
+		const { pi, commands } = makePi();
+		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		reviewExtension(pi as never);
+
+		const replacementCtx = makeReviewCtx();
+		const ctx = makeCommandCtx({
+			cwd: makeRepo(),
+			fork: vi.fn(async (_entryId: string, options: any) => {
+				await options?.withSession?.(replacementCtx);
+				return { cancelled: false };
+			}),
+		});
+
+		await commands.get("review").handler("", ctx);
+
+		expect(ctx.ui.custom).not.toHaveBeenCalled();
+		expect(replacementCtx.ui.custom).toHaveBeenCalled();
+	});
+
+	it("handles cancelled review fork without parsing or showing findings", async () => {
+		const { pi, commands } = makePi();
+		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		reviewExtension(pi as never);
+
+		const ctx = makeCommandCtx({
+			cwd: makeRepo(),
+			fork: vi.fn(async () => ({ cancelled: true })),
+		});
+
+		await commands.get("review").handler("", ctx);
+
+		expect(ctx.ui.notify).toHaveBeenCalledWith("Review cancelled.", "info");
+		expect(ctx.ui.custom).not.toHaveBeenCalled();
+	});
+
+	it("notifies when review findings cannot be parsed", async () => {
+		const { pi, commands } = makePi();
+		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		reviewExtension(pi as never);
+
+		const replacementCtx = makeReviewCtx("not json");
+		const ctx = makeCommandCtx({
+			cwd: makeRepo(),
+			fork: vi.fn(async (_entryId: string, options: any) => {
+				await options?.withSession?.(replacementCtx);
+				return { cancelled: false };
+			}),
+		});
+
+		await commands.get("review").handler("", ctx);
+
+		expect(replacementCtx.ui.notify).toHaveBeenCalledWith("Could not parse review findings.", "error");
+		expect(ctx.ui.custom).not.toHaveBeenCalled();
+		expect(replacementCtx.ui.custom).not.toHaveBeenCalled();
 	});
 });
