@@ -1,5 +1,5 @@
 import { type ExtensionCommandContext, type Theme } from "@mariozechner/pi-coding-agent";
-import { Container, Key, matchesKey, Spacer, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
+import { Box, Container, Input, Key, matchesKey, Spacer, Text, truncateToWidth, visibleWidth, type Component, type Focusable } from "@mariozechner/pi-tui";
 import { loadSourceExcerpt } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
 import { discardFinding, updateFindingNote, updateReviewIndex, type ReviewRunState } from "./state.ts";
@@ -73,6 +73,65 @@ export async function showParseRecovery(
 		],
 	);
 	return selected === "Retry extraction" ? "retry" : "cancel";
+}
+
+class FixNotePromptDialog implements Component, Focusable {
+	private readonly input: Input;
+	private readonly panel: Box;
+	private _focused = false;
+
+	constructor(
+		private readonly theme: Theme,
+		title: string,
+		defaultValue: string,
+		private readonly done: (result: string | undefined) => void,
+	) {
+		this.input = new Input();
+		this.input.setValue(defaultValue);
+		this.input.onSubmit = (value) => this.done(value);
+		this.input.onEscape = () => this.done(undefined);
+		this.panel = new Box(1, 1, (text) => this.theme.bg("customMessageBg", text));
+		this.panel.addChild(new Text(this.theme.fg("accent", title), 0, 0));
+		this.panel.addChild(new Spacer(1));
+		this.panel.addChild(new Text(this.theme.fg("text", "Leave a note for this finding, then press Enter to save."), 0, 0));
+		this.panel.addChild(new Text(this.theme.fg("dim", "Esc cancels."), 0, 0));
+		this.panel.addChild(new Spacer(1));
+		this.panel.addChild(new Text(this.theme.fg("accent", "Note"), 0, 0));
+		this.panel.addChild(this.input);
+	}
+
+	get focused(): boolean {
+		return this._focused;
+	}
+
+	set focused(value: boolean) {
+		this._focused = value;
+		this.input.focused = value;
+	}
+
+	handleInput(data: string): void {
+		this.input.handleInput(data);
+	}
+
+	invalidate(): void {
+		this.panel.invalidate();
+	}
+
+	render(width: number): string[] {
+		const contentWidth = Math.max(1, width - 4);
+		const body = this.panel.render(contentWidth);
+		const borderWidth = Math.max(2, width);
+		const lines = [
+			this.theme.fg("borderAccent", `┌${"─".repeat(Math.max(0, borderWidth - 2))}┐`),
+		];
+		for (const line of body) {
+			const clipped = truncateToWidth(line, contentWidth);
+			const padding = " ".repeat(Math.max(0, contentWidth - visibleWidth(clipped)));
+			lines.push(this.theme.fg("border", `│ ${clipped}${padding} │`));
+		}
+		lines.push(this.theme.fg("borderAccent", `└${"─".repeat(Math.max(0, borderWidth - 2))}┘`));
+		return lines;
+	}
 }
 
 export class FindingsDialog {
@@ -362,7 +421,15 @@ export async function showFindings(
 					const openCount = stateToClose.findings.length;
 					return ctx.ui.confirm("Exit review?", `${openCount} finding${openCount === 1 ? "" : "s"} still retained.`);
 				},
-				(title, defaultValue) => ctx.ui.input(title, defaultValue),
+				(title, defaultValue) =>
+					ctx.ui.custom<string | undefined>(
+						(_noteTui, noteTheme, _noteKeybindings, noteDone) =>
+							new FixNotePromptDialog(noteTheme, title, defaultValue, noteDone),
+						{
+							overlay: true,
+							overlayOptions: { anchor: "center", width: "48%", minWidth: 52, maxHeight: 12, margin: 2 },
+						},
+					),
 			),
 		{ overlay: true, overlayOptions: { anchor: "center", width: "72%", minWidth: 72, maxHeight: "85%", margin: 2 } },
 	);
