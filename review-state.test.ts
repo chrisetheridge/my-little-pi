@@ -114,6 +114,16 @@ describe("review state", () => {
 		])).toBe(latest);
 	});
 
+	it("rebuilds the latest persisted review state from durable custom message entries", () => {
+		const older = buildInitialReviewState(target, findings, "older");
+		const latest = updateFindingStatus(buildInitialReviewState(target, findings, "latest"), "finding-a", "ignored");
+
+		expect(rebuildLatestReviewState([
+			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
+			{ type: "custom_message", customType: REVIEW_STATE_ENTRY_TYPE, details: latest },
+		])).toBe(latest);
+	});
+
 	it("skips malformed newer review state entries when rebuilding", () => {
 		const older = buildInitialReviewState(target, findings, "older");
 

@@ -155,6 +155,9 @@ function persistedStateFromEntry(entry: any): unknown {
 	if (entry?.type === "custom" && entry.customType === REVIEW_STATE_ENTRY_TYPE) {
 		return entry.data;
 	}
+	if (entry?.type === "custom_message" && entry.customType === REVIEW_STATE_ENTRY_TYPE) {
+		return entry.details;
+	}
 	if (
 		entry?.type === "message" &&
 		entry.message?.role === "custom" &&
