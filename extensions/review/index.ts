@@ -1,3 +1,4 @@
+import { complete, type AssistantMessage, type UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { extractFindingsBlock, normalizeFindings } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
@@ -11,9 +12,9 @@ import {
 	isGitRepository,
 	restoreOriginalRef,
 } from "./git.ts";
-import { buildReviewPrompt } from "./prompt.ts";
+import { buildFindingsFormatterPrompt, buildReviewPrompt } from "./prompt.ts";
 import { REVIEW_STATE_ENTRY_TYPE, buildInitialReviewState } from "./state.ts";
-import { chooseInitialMode, confirmPreflight, showFindings } from "./ui.ts";
+import { chooseInitialMode, confirmPreflight, showFindings, showParseRecovery } from "./ui.ts";
 
 function lastAssistantText(ctx: Pick<ExtensionCommandContext, "sessionManager">): string {
 	const branch = ctx.sessionManager.getBranch();
@@ -34,6 +35,47 @@ function lastAssistantText(ctx: Pick<ExtensionCommandContext, "sessionManager">)
 function currentLeafId(ctx: ExtensionCommandContext): string | undefined {
 	const branch = ctx.sessionManager.getBranch();
 	return (branch[branch.length - 1] as any)?.id;
+}
+
+function assistantText(response: Pick<AssistantMessage, "content">): string {
+	return response.content
+		.filter((part): part is { type: "text"; text: string } => part.type === "text")
+		.map((part) => part.text)
+		.join("\n");
+}
+
+export async function formatFindingsWithSelectedModel(
+	ctx: ExtensionCommandContext,
+	rawOutput: string,
+): Promise<string> {
+	if (!ctx.model) {
+		throw new Error("Select a model before retrying findings extraction.");
+	}
+
+	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+	if (!auth.ok || !auth.apiKey) {
+		throw new Error(auth.ok ? `No API key for ${ctx.model.provider}` : auth.error);
+	}
+
+	const userMessage: UserMessage = {
+		role: "user",
+		content: [{ type: "text", text: buildFindingsFormatterPrompt(rawOutput) }],
+		timestamp: Date.now(),
+	};
+	const response = await complete(
+		ctx.model,
+		{ messages: [userMessage] },
+		{ apiKey: auth.apiKey, headers: auth.headers },
+	);
+	if (response.stopReason !== "stop") {
+		throw new Error(response.errorMessage ?? `formatter model stopped with ${response.stopReason}.`);
+	}
+
+	const output = assistantText(response).trim();
+	if (!output) {
+		throw new Error("formatter model returned an empty response.");
+	}
+	return output;
 }
 
 export default function reviewExtension(pi: ExtensionAPI): void {
@@ -131,9 +173,21 @@ async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Pr
 				try {
 					const parsed = extractFindingsBlock(output);
 					findings = normalizeFindings(parsed.findings);
-				} catch {
-					reviewCtx.ui.notify("Could not parse review findings.", "error");
-					return;
+				} catch (error) {
+					const choice = await showParseRecovery(reviewCtx, error as Error, output);
+					if (choice === "cancel") {
+						reviewCtx.ui.notify("Review cancelled.", "info");
+						return;
+					}
+
+					try {
+						const formatterOutput = await formatFindingsWithSelectedModel(reviewCtx, output);
+						const parsed = extractFindingsBlock(formatterOutput);
+						findings = normalizeFindings(parsed.findings);
+					} catch (formatterError) {
+						reviewCtx.ui.notify(`Could not recover review findings: ${(formatterError as Error).message}`, "error");
+						return;
+					}
 				}
 
 				const state = buildInitialReviewState(target, findings, output);

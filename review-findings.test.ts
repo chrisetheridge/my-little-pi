@@ -39,6 +39,9 @@ describe("review findings", () => {
 		expect(() => extractFindingsBlock("```json\n{}\n```")).toThrow(
 			"Missing ```review-findings fenced block.",
 		);
+		expect(() => extractFindingsBlock("plain markdown")).toThrow(
+			"Missing ```review-findings fenced block.",
+		);
 	});
 
 	it("normalizes severity, paths, status, and deterministic ids", () => {

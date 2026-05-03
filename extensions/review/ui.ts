@@ -69,6 +69,28 @@ export async function confirmPreflight(ctx: ExtensionCommandContext, target: Rev
 	return ctx.ui.confirm("Start code review?", formatPreflight(target));
 }
 
+export type RecoveryChoice = "retry" | "cancel";
+
+export async function showParseRecovery(
+	ctx: ExtensionCommandContext,
+	error: Error,
+	rawOutput: string,
+): Promise<RecoveryChoice> {
+	const preview = rawOutput.slice(0, 2000);
+	const selected = await ctx.ui.select([
+		"Review findings parse failed.",
+		"",
+		error.message,
+		"",
+		"Raw output preview:",
+		preview || "(empty output)",
+	].join("\n"), [
+		"Retry extraction",
+		"Cancel",
+	]);
+	return selected === "Retry extraction" ? "retry" : "cancel";
+}
+
 export class FindingsDialog implements Component {
 	private state: ReviewRunState;
 	private cachedWidth?: number;
@@ -76,6 +98,7 @@ export class FindingsDialog implements Component {
 	private asking = false;
 	private activeQnaAbort?: AbortController;
 	private closeAfterQnaAbort = false;
+	private statusMessage?: string;
 
 	constructor(
 		state: ReviewRunState,
@@ -119,6 +142,12 @@ export class FindingsDialog implements Component {
 			const finding = this.state.findings[this.state.currentIndex];
 			if (!finding) return;
 			this.state = updateFindingStatus(this.state, finding.id, "ignored");
+			this.statusMessage = undefined;
+			this.invalidate();
+			return;
+		}
+		if (data === "a") {
+			this.statusMessage = "Actions are not designed yet.";
 			this.invalidate();
 			return;
 		}
@@ -182,7 +211,11 @@ export class FindingsDialog implements Component {
 				push(`Q&A turns: ${qnaTurns.length}`);
 				push();
 			}
-			push(`n/right: next  p/left: previous  i: ignore  q: ask${this.asking ? "..." : ""}  Esc: close`);
+			if (this.statusMessage) {
+				push(this.theme.fg("dim", this.statusMessage));
+				push();
+			}
+			push(`n/right: next  p/left: previous  i: ignore  q: ask${this.asking ? "..." : ""}  a: actions unavailable  Esc: close`);
 		}
 
 		lines.push(`+${"-".repeat(innerWidth + 2)}+`);

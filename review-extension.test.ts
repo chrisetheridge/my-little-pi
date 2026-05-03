@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(() => {
 	vi.restoreAllMocks();
+	vi.doUnmock("@mariozechner/pi-ai");
 	vi.resetModules();
 });
 
@@ -68,6 +69,9 @@ function makeCommandCtx(overrides: Partial<any> = {}) {
 		cwd: "/tmp/project",
 		hasUI: true,
 		model: { id: "test/model", provider: "test" },
+		modelRegistry: {
+			getApiKeyAndHeaders: vi.fn(async () => ({ ok: true, apiKey: "test-key", headers: { "x-test": "1" } })),
+		},
 		ui: {
 			notify: vi.fn(),
 			select: vi.fn(async () => "Uncommitted changes"),
@@ -235,12 +239,13 @@ describe("review extension", () => {
 		expect(ctx.ui.custom).not.toHaveBeenCalled();
 	});
 
-	it("notifies when review findings cannot be parsed", async () => {
+	it("opens recovery UI for malformed assistant output and cancel does not show findings", async () => {
 		const { pi, commands } = makePi();
 		const { default: reviewExtension } = await import("./extensions/review/index.ts");
 		reviewExtension(pi as never);
 
 		const replacementCtx = makeReviewCtx("not json");
+		replacementCtx.ui.select = vi.fn(async () => "Cancel");
 		const ctx = makeCommandCtx({
 			cwd: makeRepo(),
 			fork: vi.fn(async (_entryId: string, options: any) => {
@@ -251,9 +256,129 @@ describe("review extension", () => {
 
 		await commands.get("review").handler("", ctx);
 
-		expect(replacementCtx.ui.notify).toHaveBeenCalledWith("Could not parse review findings.", "error");
+		expect(replacementCtx.ui.select).toHaveBeenCalledWith(
+			expect.stringContaining("Review findings parse failed."),
+			["Retry extraction", "Cancel"],
+		);
+		expect(replacementCtx.ui.select.mock.calls[0]?.[0]).toContain("Missing ```review-findings fenced block.");
+		expect(replacementCtx.ui.select.mock.calls[0]?.[0]).toContain("not json");
+		expect(replacementCtx.ui.notify).toHaveBeenCalledWith("Review cancelled.", "info");
+		expect(replacementCtx.sendMessage).not.toHaveBeenCalled();
 		expect(ctx.ui.custom).not.toHaveBeenCalled();
 		expect(replacementCtx.ui.custom).not.toHaveBeenCalled();
+	});
+
+	it("retries malformed assistant output through formatter and then opens findings", async () => {
+		const formatterOutput = [
+			"```review-findings",
+			JSON.stringify({
+				summary: "Recovered.",
+				findings: [
+					{
+						severity: "medium",
+						file: "README.md",
+						startLine: 2,
+						title: "Recovered issue",
+						explanation: "The formatter preserved an actionable finding.",
+						suggestedFix: "Fix the recovered issue.",
+					},
+				],
+			}),
+			"```",
+		].join("\n");
+		const complete = vi.fn(async () => ({
+			role: "assistant",
+			content: [{ type: "text", text: formatterOutput }],
+			api: "test",
+			provider: "test",
+			model: "test/model",
+			usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+			stopReason: "stop",
+			timestamp: Date.now(),
+		}));
+		vi.doMock("@mariozechner/pi-ai", async () => ({
+			...(await vi.importActual("@mariozechner/pi-ai")),
+			complete,
+		}));
+
+		const { pi, commands } = makePi();
+		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		reviewExtension(pi as never);
+
+		const replacementCtx = makeReviewCtx("plain markdown with a real issue");
+		replacementCtx.ui.select = vi.fn(async () => "Retry extraction");
+		replacementCtx.ui.custom = vi.fn(async () => undefined);
+		const ctx = makeCommandCtx({
+			cwd: makeRepo(),
+			fork: vi.fn(async (_entryId: string, options: any) => {
+				await options?.withSession?.(replacementCtx);
+				return { cancelled: false };
+			}),
+		});
+
+		await commands.get("review").handler("", ctx);
+
+		expect(replacementCtx.modelRegistry.getApiKeyAndHeaders).toHaveBeenCalledWith(replacementCtx.model);
+		expect(complete).toHaveBeenCalledWith(
+			replacementCtx.model,
+			{
+				messages: [
+					expect.objectContaining({
+						role: "user",
+						content: [expect.objectContaining({
+							type: "text",
+							text: expect.stringContaining("exactly one fenced review-findings block and no prose"),
+						})],
+					}),
+				],
+			},
+			{ apiKey: "test-key", headers: { "x-test": "1" } },
+		);
+		expect(replacementCtx.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+			customType: "review-state",
+			details: expect.objectContaining({
+				kind: "review-state",
+				rawReviewOutput: "plain markdown with a real issue",
+				findings: [expect.objectContaining({ title: "Recovered issue" })],
+			}),
+		}));
+		expect(replacementCtx.ui.custom).toHaveBeenCalled();
+	});
+
+	it("shows actions as unavailable in the findings dialog", async () => {
+		const { FindingsDialog } = await import("./extensions/review/ui.ts");
+		const { buildInitialReviewState } = await import("./extensions/review/state.ts");
+		const state = buildInitialReviewState({
+			mode: "uncommitted",
+			label: "Uncommitted changes",
+			promptContext: "diff",
+			changedFiles: ["README.md"],
+			stagedCount: 0,
+			unstagedCount: 1,
+		}, [
+			{
+				id: "finding-a",
+				severity: "low",
+				file: "README.md",
+				startLine: 1,
+				title: "Test finding",
+				explanation: "Explanation.",
+				suggestedFix: "Fix.",
+				status: "open",
+			},
+		], "raw");
+		const dialog = new FindingsDialog(
+			state,
+			{ fg: (role: string, text: string) => role === "dim" ? `<dim>${text}</dim>` : text } as never,
+			vi.fn(),
+			vi.fn(),
+		);
+
+		expect(dialog.render(100).join("\n")).toContain("a: actions unavailable");
+
+		dialog.handleInput("a");
+
+		expect(dialog.render(100).join("\n")).toContain("<dim>Actions are not designed yet.</dim>");
 	});
 
 	it("builds PR reviews from a URL and restores the original ref after review", async () => {
