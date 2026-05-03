@@ -188,7 +188,7 @@ describe("review extension", () => {
 			async () => true,
 		);
 
-		expect(dialog.render(100).join("\n")).toContain("f: fix  d: discard  s: submit");
+		expect(dialog.render(100).join("\n")).toContain("f: fix  F: fix+note  d: discard  s: submit");
 		dialog.handleInput("d");
 		expect(dialog.render(100).join("\n")).toContain("Second issue");
 		expect(dialog.render(100).join("\n")).not.toContain("Risky README");
@@ -331,11 +331,57 @@ describe("review extension", () => {
 			async () => true,
 		);
 
-		expect(dialog.render(100).join("\n")).toContain("f: fix  d: discard  s: submit");
+		expect(dialog.render(100).join("\n")).toContain("f: fix  F: fix+note  d: discard  s: submit");
 		dialog.handleInput("f");
 		expect(result).toBeUndefined();
 		dialog.handleInput("s");
 		expect(result).toEqual(expect.objectContaining({ submitted: true }));
+	});
+
+	it("prompts for a note when fixing with notes", async () => {
+		const { FindingsDialog } = await import("./extensions/review/ui.ts");
+		const { buildInitialReviewState } = await import("./extensions/review/state.ts");
+		const state = buildInitialReviewState({
+			mode: "uncommitted",
+			label: "Uncommitted changes",
+			promptContext: "diff",
+			changedFiles: ["README.md"],
+			stagedCount: 0,
+			unstagedCount: 1,
+		}, [
+			{
+				id: "finding-a",
+				severity: "low",
+				file: "README.md",
+				startLine: 1,
+				title: "Test finding",
+				explanation: "Explanation.",
+				suggestedFix: "Fix.",
+				status: "open",
+			},
+		], "raw");
+		let result: any;
+		const promptForFixNote = vi.fn(async () => "Use the new API, but keep the old behavior.");
+		const dialog = new FindingsDialog(
+			state,
+			makeRepo(),
+			{ fg: (role: string, text: string) => role === "dim" ? `<dim>${text}</dim>` : text } as never,
+			(updated) => {
+				result = updated;
+			},
+			async () => true,
+			promptForFixNote,
+		);
+
+		dialog.handleInput("F");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(promptForFixNote).toHaveBeenCalledWith("Fix note", "");
+		const rendered = dialog.render(100).join("\n");
+		expect(rendered).toContain("Reviewer note");
+		expect(rendered).toContain("Use the new API, but keep the old behavior.");
+		dialog.handleInput("s");
+		expect(result).toEqual(expect.objectContaining({ submitted: true }));
+		expect(result.state.findings[0]?.note).toBe("Use the new API, but keep the old behavior.");
 	});
 
 	it("submits retained findings to a follow-up session", async () => {

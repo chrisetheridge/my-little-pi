@@ -102,6 +102,7 @@ export function buildReviewFixPrompt(input: {
 			`Title: ${finding.title}`,
 			`Why: ${finding.explanation}`,
 			`Suggested fix: ${finding.suggestedFix}`,
+			finding.note ? `Reviewer note: ${finding.note}` : undefined,
 			sourceExcerpt ? `Source:\n${sourceExcerpt}` : undefined,
 			"",
 		]

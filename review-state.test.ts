@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ReviewFinding } from "./extensions/review/findings.ts";
 import type { ReviewTarget } from "./extensions/review/git.ts";
-import { buildInitialReviewState, discardFinding, updateFindingStatus, updateReviewIndex } from "./extensions/review/state.ts";
+import { buildInitialReviewState, discardFinding, updateFindingNote, updateFindingStatus, updateReviewIndex } from "./extensions/review/state.ts";
 
 const target: ReviewTarget = {
 	mode: "uncommitted",
@@ -61,6 +61,17 @@ describe("review state", () => {
 		expect(updated.findings).not.toBe(state.findings);
 		expect(updated.findings[0]?.status).toBe("ignored");
 		expect(state.findings[0]?.status).toBe("open");
+		expect(updated.findings[1]).toBe(state.findings[1]);
+	});
+
+	it("updates finding notes immutably", () => {
+		const state = buildInitialReviewState(target, findings, "raw output");
+		const updated = updateFindingNote(state, "finding-a", "Do it this way.");
+
+		expect(updated).not.toBe(state);
+		expect(updated.findings).not.toBe(state.findings);
+		expect(updated.findings[0]?.note).toBe("Do it this way.");
+		expect(state.findings[0]?.note).toBeUndefined();
 		expect(updated.findings[1]).toBe(state.findings[1]);
 	});
 

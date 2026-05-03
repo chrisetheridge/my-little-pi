@@ -17,6 +17,7 @@ export interface RawFinding {
 	title?: string;
 	explanation?: string;
 	suggestedFix?: string;
+	note?: string;
 }
 
 export interface ReviewFinding {
@@ -30,6 +31,7 @@ export interface ReviewFinding {
 	title: string;
 	explanation: string;
 	suggestedFix: string;
+	note?: string;
 	status: FindingStatus;
 }
 
@@ -81,7 +83,7 @@ function validateRawFindingSchema(value: unknown, index: number): RawFinding {
 		throw new Error(`Finding at index ${index} must be an object.`);
 	}
 
-	for (const field of ["id", "severity", "file", "title", "explanation", "suggestedFix"] as const) {
+	for (const field of ["id", "severity", "file", "title", "explanation", "suggestedFix", "note"] as const) {
 		validateOptionalStringField(value, field);
 	}
 	for (const field of ["startLine", "startColumn", "endLine", "endColumn"] as const) {
@@ -243,6 +245,7 @@ export function normalizeFindings(rawFindings: RawFinding[]): ReviewFinding[] {
 			title,
 			explanation,
 			suggestedFix,
+			note: rawFinding.note?.trim() || undefined,
 			status: "open",
 		};
 	});

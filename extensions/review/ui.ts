@@ -2,7 +2,7 @@ import { type ExtensionCommandContext, type Theme } from "@mariozechner/pi-codin
 import { Container, Key, matchesKey, Spacer, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { loadSourceExcerpt } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
-import { discardFinding, updateReviewIndex, type ReviewRunState } from "./state.ts";
+import { discardFinding, updateFindingNote, updateReviewIndex, type ReviewRunState } from "./state.ts";
 
 const FINDINGS_VIEWPORT_LINES = 11;
 
@@ -80,6 +80,7 @@ export class FindingsDialog {
 	private statusMessage?: string;
 	private scrollOffset = 0;
 	private lastWidth = 100;
+	private busy = false;
 
 	constructor(
 		state: ReviewRunState,
@@ -87,6 +88,7 @@ export class FindingsDialog {
 		private readonly theme: Theme,
 		private readonly done: (result: FindingsDialogResult) => void,
 		private readonly confirmClose: (state: ReviewRunState) => Promise<boolean>,
+		private readonly promptForFixNote: (title: string, defaultValue: string) => Promise<string | undefined> = async () => undefined,
 	) {
 		const maxIndex = Math.max(0, state.findings.length - 1);
 		this.state = state.currentIndex < 0 || state.currentIndex > maxIndex ? updateReviewIndex(state, state.currentIndex) : state;
@@ -160,13 +162,12 @@ export class FindingsDialog {
 			this.invalidate();
 			return;
 		}
+		if (data === "F") {
+			void this.fixWithNotes();
+			return;
+		}
 		if (data === "f") {
-			const finding = this.state.findings[this.state.currentIndex];
-			if (!finding) return;
-			this.statusMessage = "Marked fix.";
-			this.state = updateReviewIndex(this.state, this.state.currentIndex + 1);
-			this.scrollOffset = 0;
-			this.invalidate();
+			this.markFix();
 			return;
 		}
 		if (data === "d") {
@@ -176,6 +177,36 @@ export class FindingsDialog {
 			this.statusMessage = "Discarded.";
 			this.scrollOffset = 0;
 			this.invalidate();
+		}
+	}
+
+	private markFix(message = "Marked fix."): void {
+		const finding = this.state.findings[this.state.currentIndex];
+		if (!finding) return;
+		this.statusMessage = message;
+		this.state = updateReviewIndex(this.state, this.state.currentIndex + 1);
+		this.scrollOffset = 0;
+		this.invalidate();
+	}
+
+	private async fixWithNotes(): Promise<void> {
+		if (this.busy) return;
+		const finding = this.state.findings[this.state.currentIndex];
+		if (!finding) return;
+		this.busy = true;
+		this.statusMessage = "Adding fix note...";
+		this.invalidate();
+		try {
+			const note = (await this.promptForFixNote("Fix note", ""))?.trim();
+			if (note === undefined) {
+				this.statusMessage = undefined;
+				this.invalidate();
+				return;
+			}
+			this.state = updateFindingNote(this.state, finding.id, note);
+			this.markFix("Marked fix with note.");
+		} finally {
+			this.busy = false;
 		}
 	}
 
@@ -253,6 +284,11 @@ export class FindingsDialog {
 		content.addChild(new Spacer(1));
 		content.addChild(new Text(this.theme.fg("accent", "Suggested fix"), 0, 0));
 		content.addChild(new Text(finding.suggestedFix, 0, 0));
+		if (finding.note) {
+			content.addChild(new Spacer(1));
+			content.addChild(new Text(this.theme.fg("accent", "Reviewer note"), 0, 0));
+			content.addChild(new Text(finding.note, 0, 0));
+		}
 		content.addChild(new Spacer(1));
 		content.addChild(new Text(this.theme.fg("accent", "Source excerpt"), 0, 0));
 		if (!excerpt.available) {
@@ -303,7 +339,7 @@ export class FindingsDialog {
 		}
 
 		const scrollHint = canScroll ? "  Up/Down or j/k: scroll  PgUp/PgDn: page  Home/End: top/bottom" : "";
-		return `f: fix  d: discard  s: submit${scrollHint}  Esc: close`;
+		return `f: fix  F: fix+note  d: discard  s: submit${scrollHint}  Esc: close`;
 	}
 }
 
@@ -326,6 +362,7 @@ export async function showFindings(
 					const openCount = stateToClose.findings.length;
 					return ctx.ui.confirm("Exit review?", `${openCount} finding${openCount === 1 ? "" : "s"} still retained.`);
 				},
+				(title, defaultValue) => ctx.ui.input(title, defaultValue),
 			),
 		{ overlay: true, overlayOptions: { anchor: "center", width: "72%", minWidth: 72, maxHeight: "85%", margin: 2 } },
 	);

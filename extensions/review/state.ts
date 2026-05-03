@@ -43,6 +43,20 @@ export function updateFindingStatus(
 	};
 }
 
+export function updateFindingNote(
+	state: ReviewRunState,
+	findingId: string,
+	note?: string,
+): ReviewRunState {
+	return {
+		...state,
+		findings: state.findings.map((finding) => {
+			if (finding.id !== findingId) return finding;
+			return { ...finding, note: note?.trim() || undefined };
+		}),
+	};
+}
+
 export function updateReviewIndex(state: ReviewRunState, index: number): ReviewRunState {
 	const maxIndex = Math.max(0, state.findings.length - 1);
 	return {

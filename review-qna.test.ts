@@ -44,11 +44,12 @@ describe("review triage", () => {
 	it("builds a fix prompt for retained findings", () => {
 		const prompt = buildReviewFixPrompt({
 			targetLabel: "Local changes against main",
-			findings: [{ finding, sourceExcerpt: "  2: const two = 2;\n> 3: return items[index];" }],
+			findings: [{ finding: { ...finding, note: "Keep the API but make it safer." }, sourceExcerpt: "  2: const two = 2;\n> 3: return items[index];" }],
 		});
 
 		expect(prompt).toContain("You are now fixing the retained review findings.");
 		expect(prompt).toContain("Missing bounds check");
+		expect(prompt).toContain("Reviewer note: Keep the API but make it safer.");
 		expect(prompt).toContain("Source:\n  2: const two = 2;\n> 3: return items[index];");
 	});
 
