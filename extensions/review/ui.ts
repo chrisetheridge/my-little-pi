@@ -70,7 +70,11 @@ export class FindingsDialog implements Component {
 		state: ReviewRunState,
 		private readonly theme: Theme,
 		private readonly done: (result: ReviewRunState) => void,
-		private readonly askQuestion: (findingId: string, signal: AbortSignal) => Promise<ReviewRunState | undefined>,
+		private readonly askQuestion: (
+			state: ReviewRunState,
+			findingId: string,
+			signal: AbortSignal,
+		) => Promise<ReviewRunState | undefined>,
 	) {
 		const maxIndex = Math.max(0, state.findings.length - 1);
 		this.state =
@@ -114,7 +118,7 @@ export class FindingsDialog implements Component {
 			this.closeAfterQnaAbort = false;
 			this.activeQnaAbort = new AbortController();
 			this.invalidate();
-			this.askQuestion(finding.id, this.activeQnaAbort.signal)
+			this.askQuestion(this.state, finding.id, this.activeQnaAbort.signal)
 				.then((updated) => {
 					if (updated) {
 						this.state = updateReviewIndex(updated, this.state.currentIndex);
@@ -187,11 +191,16 @@ export async function showFindings(
 	state: ReviewRunState,
 ): Promise<ReviewRunState> {
 	let latest = state;
-	const askQuestion = async (findingId: string, signal: AbortSignal): Promise<ReviewRunState | undefined> => {
+	const askQuestion = async (
+		currentState: ReviewRunState,
+		findingId: string,
+		signal: AbortSignal,
+	): Promise<ReviewRunState | undefined> => {
+		latest = currentState;
 		const question = (await ctx.ui.input("Ask about this finding", ""))?.trim();
 		if (!question) return undefined;
 		if (signal.aborted) return undefined;
-		const finding = latest.findings.find((item) => item.id === findingId);
+		const finding = currentState.findings.find((item) => item.id === findingId);
 		if (!finding) return undefined;
 		if (!ctx.model) {
 			ctx.ui.notify("Select a model before asking about a finding.", "error");
@@ -212,9 +221,9 @@ export async function showFindings(
 				type: "text",
 				text: buildQnaPrompt({
 					finding,
-					targetLabel: latest.target.label,
+					targetLabel: currentState.target.label,
 					sourceExcerpt: formatExcerptForPrompt(excerpt),
-					priorTurns: latest.qnaByFindingId[finding.id] ?? [],
+					priorTurns: currentState.qnaByFindingId[finding.id] ?? [],
 					question,
 				}),
 			}],
@@ -233,7 +242,7 @@ export async function showFindings(
 				if (response.stopReason !== "aborted") ctx.ui.notify(answer.message, "error");
 				return undefined;
 			}
-			latest = addQnaTurn(latest, finding.id, { question, answer: answer.answer, timestamp: Date.now() });
+			latest = addQnaTurn(currentState, finding.id, { question, answer: answer.answer, timestamp: Date.now() });
 			return latest;
 		} catch (error) {
 			if (signal.aborted) return undefined;

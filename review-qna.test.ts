@@ -110,7 +110,7 @@ describe("review Q&A", () => {
 			(result) => {
 				doneState = result;
 			},
-			(_findingId, abortSignal) => {
+			(_currentState, _findingId, abortSignal) => {
 				signal = abortSignal;
 				return new Promise((resolve) => {
 					resolveQuestion = resolve;
@@ -127,5 +127,32 @@ describe("review Q&A", () => {
 		resolveQuestion?.(undefined);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		expect(doneState).toBe(state);
+	});
+
+	it("preserves dialog-local mutations when Q&A updates state", async () => {
+		const state = buildInitialReviewState(target, [finding], "raw output");
+		let doneState: any;
+		const dialog = new FindingsDialog(
+			state,
+			{ fg: (_role: string, text: string) => text } as never,
+			(result) => {
+				doneState = result;
+			},
+			async (currentState, findingId) => addQnaTurn(currentState, findingId, {
+				question: "Why?",
+				answer: "Because.",
+				timestamp: 10,
+			}),
+		);
+
+		dialog.handleInput("i");
+		dialog.handleInput("q");
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		dialog.handleInput("\x1b");
+
+		expect(doneState.findings[0]?.status).toBe("ignored");
+		expect(doneState.qnaByFindingId["finding-a"]).toEqual([
+			{ question: "Why?", answer: "Because.", timestamp: 10 },
+		]);
 	});
 });
