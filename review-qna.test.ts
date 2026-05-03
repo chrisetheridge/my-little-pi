@@ -200,7 +200,7 @@ describe("review Q&A", () => {
 
 		const rendered = dialog.render(100).join("\n");
 
-		expect(rendered).toContain("Source:");
+		expect(rendered).toContain("Source excerpt");
 		expect(rendered).toContain("return items[index];");
 		expect(rendered).toContain("Q: Why?");
 		expect(rendered).toContain("A: Because it can crash.");

@@ -1,6 +1,6 @@
 import { complete, type AssistantMessage, type UserMessage } from "@mariozechner/pi-ai";
-import type { ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component } from "@mariozechner/pi-tui";
+import { DynamicBorder, type ExtensionCommandContext, type Theme } from "@mariozechner/pi-coding-agent";
+import { Box, Container, Key, matchesKey, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { loadSourceExcerpt } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
 import { buildQnaPrompt, formatExcerptForPrompt } from "./prompt.ts";
@@ -91,10 +91,8 @@ export async function showParseRecovery(
 	return selected === "Retry extraction" ? "retry" : "cancel";
 }
 
-export class FindingsDialog implements Component {
+export class FindingsDialog {
 	private state: ReviewRunState;
-	private cachedWidth?: number;
-	private cachedLines?: string[];
 	private asking = false;
 	private activeQnaAbort?: AbortController;
 	private closeAfterQnaAbort = false;
@@ -194,76 +192,110 @@ export class FindingsDialog implements Component {
 						this.closeAfterQnaAbort = false;
 						this.done(this.state);
 					}
-				});
+			});
 		}
 	}
 
 	render(width: number): string[] {
-		if (this.cachedLines && this.cachedWidth === width) return this.cachedLines;
-
-		const innerWidth = Math.max(20, width - 4);
-		const lines: string[] = [];
-		const push = (line = "") => lines.push(`| ${truncateToWidth(line, innerWidth).padEnd(innerWidth, " ")} |`);
-
-		lines.push(`+${"-".repeat(innerWidth + 2)}+`);
-		push(this.theme.fg("accent", "Code review findings"));
-		push(this.theme.fg("dim", this.state.target.label));
-		push();
-
-		if (this.state.findings.length === 0) {
-			push("No actionable findings found.");
-			push();
-			push("Esc: close");
-		} else {
-			const finding = this.state.findings[this.state.currentIndex]!;
-			const status = finding.status === "ignored" ? "  IGNORED" : "";
-			push(
-				`${this.state.currentIndex + 1} / ${this.state.findings.length}  ${finding.severity.toUpperCase()}${status}  ${finding.file}:${finding.startLine}`,
-			);
-			push(finding.title);
-			push();
-			for (const line of wrapTextWithAnsi(finding.explanation, innerWidth)) push(line);
-			push();
-			push("Suggested fix:");
-			for (const line of wrapTextWithAnsi(finding.suggestedFix, innerWidth)) push(line);
-			push();
-			const excerpt = loadSourceExcerpt(this.cwd, finding);
-			push("Source:");
-			if (!excerpt.available) {
-				push(this.theme.fg("dim", excerpt.message ?? "Source unavailable."));
-			} else {
-				for (const excerptLine of excerpt.lines) {
-					const marker = excerptLine.selected ? ">" : " ";
-					const text = `${marker} ${String(excerptLine.number).padStart(4, " ")}: ${excerptLine.text}`;
-					push(excerptLine.selected ? this.theme.fg("accent", text) : this.theme.fg("dim", text));
-				}
-			}
-			push();
-			const qnaTurns = this.state.qnaByFindingId[finding.id] ?? [];
-			if (qnaTurns.length) {
-				push(`Q&A (${qnaTurns.length})`);
-				for (const turn of qnaTurns) {
-					for (const line of wrapTextWithAnsi(`Q: ${turn.question}`, innerWidth)) push(line);
-					for (const line of wrapTextWithAnsi(`A: ${turn.answer}`, innerWidth)) push(this.theme.fg("dim", line));
-				}
-				push();
-			}
-			if (this.statusMessage) {
-				push(this.theme.fg("dim", this.statusMessage));
-				push();
-			}
-			push(`n/right: next  p/left: previous  i: ignore  q: ask${this.asking ? "..." : ""}  a: actions unavailable  Esc: close`);
-		}
-
-		lines.push(`+${"-".repeat(innerWidth + 2)}+`);
-		this.cachedWidth = width;
-		this.cachedLines = lines;
-		return lines;
+		return this.buildView(width).render(width);
 	}
 
 	invalidate(): void {
-		this.cachedWidth = undefined;
-		this.cachedLines = undefined;
+		// No cached render state to clear.
+	}
+
+	private buildView(width: number): Container {
+		const root = new Container();
+		const accentBorder = () => new DynamicBorder((text: string) => this.theme.fg("accent", text));
+		const body = new Box(1, 1, (text: string) => this.decorateBody(text));
+		const contentWidth = Math.max(20, width - 8);
+
+		root.addChild(accentBorder());
+		root.addChild(new Spacer(1));
+		root.addChild(new Text(this.theme.fg("accent", "Code review findings"), 1, 0));
+		root.addChild(new Text(this.theme.fg("muted", this.state.target.label), 1, 0));
+		if (this.statusMessage) {
+			root.addChild(new Text(this.theme.fg("dim", this.statusMessage), 1, 0));
+		}
+		root.addChild(new Spacer(1));
+
+		body.addChild(this.buildBodyContent(contentWidth));
+		root.addChild(body);
+		root.addChild(new Spacer(1));
+		root.addChild(new Text(this.theme.fg("dim", truncateToWidth(this.buildFooterHint(), contentWidth)), 1, 0));
+		root.addChild(new Spacer(1));
+		root.addChild(accentBorder());
+		return root;
+	}
+
+	private buildBodyContent(contentWidth: number): Container {
+		const content = new Container();
+
+		if (this.state.findings.length === 0) {
+			content.addChild(new Text("No actionable findings found.", 0, 0));
+			return content;
+		}
+
+		const finding = this.state.findings[this.state.currentIndex]!;
+		const excerpt = loadSourceExcerpt(this.cwd, finding);
+		const qnaTurns = this.state.qnaByFindingId[finding.id] ?? [];
+		const status = finding.status === "ignored" ? "IGNORED" : "OPEN";
+
+		content.addChild(
+			new Text(
+				this.theme.fg(
+					"muted",
+					truncateToWidth(
+						`${this.state.currentIndex + 1} / ${this.state.findings.length}  ${finding.severity.toUpperCase()}  ${status}  ${finding.file}:${finding.startLine}`,
+						contentWidth,
+					),
+				),
+				0,
+				0,
+			),
+		);
+		content.addChild(new Text(this.theme.fg("accent", finding.title), 0, 0));
+		content.addChild(new Spacer(1));
+		content.addChild(new Text(finding.explanation, 0, 0));
+		content.addChild(new Spacer(1));
+		content.addChild(new Text(this.theme.fg("accent", "Suggested fix"), 0, 0));
+		content.addChild(new Text(finding.suggestedFix, 0, 0));
+		content.addChild(new Spacer(1));
+		content.addChild(new Text(this.theme.fg("accent", "Source excerpt"), 0, 0));
+		if (!excerpt.available) {
+			content.addChild(new Text(this.theme.fg("dim", excerpt.message ?? "Source unavailable."), 0, 0));
+		} else {
+			for (const excerptLine of excerpt.lines) {
+				const marker = excerptLine.selected ? ">" : " ";
+				const lineText = truncateToWidth(
+					`${marker} ${String(excerptLine.number).padStart(4, " ")}: ${excerptLine.text}`,
+					contentWidth,
+				);
+				content.addChild(new Text(excerptLine.selected ? this.theme.fg("accent", lineText) : this.theme.fg("dim", lineText), 0, 0));
+			}
+		}
+		if (qnaTurns.length) {
+			content.addChild(new Spacer(1));
+			content.addChild(new Text(this.theme.fg("accent", `Questions & answers (${qnaTurns.length})`), 0, 0));
+			for (const turn of qnaTurns) {
+				content.addChild(new Text(`Q: ${turn.question}`, 0, 0));
+				content.addChild(new Text(this.theme.fg("dim", `A: ${turn.answer}`), 0, 0));
+			}
+		}
+		return content;
+	}
+
+	private decorateBody(text: string): string {
+		const bg = (this.theme as { bg?: (role: string, value: string) => string }).bg;
+		return typeof bg === "function" ? bg.call(this.theme, "customMessageBg", text) : text;
+	}
+
+	private buildFooterHint(): string {
+		if (this.state.findings.length === 0) {
+			return "Esc: close";
+		}
+
+		return `n/right: next  p/left: previous  i: ignore  q: ask${this.asking ? "..." : ""}  a: actions unavailable  Esc: close`;
 	}
 }
 
@@ -331,17 +363,25 @@ export async function showFindings(
 			return undefined;
 		}
 	};
-		const result = await ctx.ui.custom<ReviewRunState>(
-			(_tui, theme, _keybindings, done) => new FindingsDialog(latest, ctx.cwd, theme, (updated) => {
-				latest = updated;
-				done(updated);
-			}, (stateToClose) => {
-				const openCount = stateToClose.findings.filter((finding) => finding.status === "open").length;
-				return ctx.ui.confirm("Exit review?", `${openCount} finding${openCount === 1 ? "" : "s"} still open.`);
-			}, askQuestion),
+	const result = await ctx.ui.custom<ReviewRunState>(
+		(_tui, theme, _keybindings, done) =>
+			new FindingsDialog(
+				latest,
+				ctx.cwd,
+				theme,
+				(updated) => {
+					latest = updated;
+					done(updated);
+				},
+				(stateToClose) => {
+					const openCount = stateToClose.findings.filter((finding) => finding.status === "open").length;
+					return ctx.ui.confirm("Exit review?", `${openCount} finding${openCount === 1 ? "" : "s"} still open.`);
+				},
+				askQuestion,
+			),
 		{
 			overlay: true,
-			overlayOptions: { width: "80%", minWidth: 60, maxHeight: "70%", anchor: "bottom-center", margin: 1 },
+			overlayOptions: { width: "84%", minWidth: 72, maxHeight: "78%", anchor: "center", margin: 2 },
 		},
 	);
 
