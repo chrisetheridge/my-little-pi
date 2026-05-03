@@ -1,4 +1,4 @@
-import { complete, type UserMessage } from "@mariozechner/pi-ai";
+import { complete, type AssistantMessage, type UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component } from "@mariozechner/pi-tui";
 import { loadSourceExcerpt } from "./findings.ts";
@@ -7,6 +7,28 @@ import { buildQnaPrompt, formatExcerptForPrompt } from "./prompt.ts";
 import { addQnaTurn, updateFindingStatus, updateReviewIndex, type ReviewRunState } from "./state.ts";
 
 const QNA_SYSTEM_PROMPT = "You answer focused questions about one code review finding.";
+
+export function qnaAnswerFromResponse(
+	response: Pick<AssistantMessage, "stopReason" | "content" | "errorMessage">,
+): { ok: true; answer: string } | { ok: false; message: string } {
+	if (response.stopReason !== "stop") {
+		return {
+			ok: false,
+			message: `Could not answer finding question: ${response.errorMessage ?? `model stopped with ${response.stopReason}.`}`,
+		};
+	}
+
+	const answer = response.content
+		.filter((part): part is { type: "text"; text: string } => part.type === "text")
+		.map((part) => part.text)
+		.join("\n")
+		.trim();
+
+	if (!answer) {
+		return { ok: false, message: "Could not answer finding question: empty response." };
+	}
+	return { ok: true, answer };
+}
 
 export async function chooseInitialMode(ctx: ExtensionCommandContext): Promise<"uncommitted" | "base" | null> {
 	const selected = await ctx.ui.select("Review target", ["Uncommitted changes", "Local changes against base"]);
@@ -36,17 +58,19 @@ export async function confirmPreflight(ctx: ExtensionCommandContext, target: Rev
 	return ctx.ui.confirm("Start code review?", formatPreflight(target));
 }
 
-class FindingsDialog implements Component {
+export class FindingsDialog implements Component {
 	private state: ReviewRunState;
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 	private asking = false;
+	private activeQnaAbort?: AbortController;
+	private closeAfterQnaAbort = false;
 
 	constructor(
 		state: ReviewRunState,
 		private readonly theme: Theme,
 		private readonly done: (result: ReviewRunState) => void,
-		private readonly askQuestion: (findingId: string) => Promise<ReviewRunState | undefined>,
+		private readonly askQuestion: (findingId: string, signal: AbortSignal) => Promise<ReviewRunState | undefined>,
 	) {
 		const maxIndex = Math.max(0, state.findings.length - 1);
 		this.state =
@@ -54,7 +78,13 @@ class FindingsDialog implements Component {
 	}
 
 	handleInput(data: string): void {
-		if (this.asking) return;
+		if (this.asking) {
+			if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+				this.closeAfterQnaAbort = true;
+				this.activeQnaAbort?.abort();
+			}
+			return;
+		}
 		if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
 			this.done(this.state);
 			return;
@@ -81,8 +111,10 @@ class FindingsDialog implements Component {
 			const finding = this.state.findings[this.state.currentIndex];
 			if (!finding) return;
 			this.asking = true;
+			this.closeAfterQnaAbort = false;
+			this.activeQnaAbort = new AbortController();
 			this.invalidate();
-			this.askQuestion(finding.id)
+			this.askQuestion(finding.id, this.activeQnaAbort.signal)
 				.then((updated) => {
 					if (updated) {
 						this.state = updateReviewIndex(updated, this.state.currentIndex);
@@ -91,7 +123,12 @@ class FindingsDialog implements Component {
 				.catch(() => undefined)
 				.finally(() => {
 					this.asking = false;
+					this.activeQnaAbort = undefined;
 					this.invalidate();
+					if (this.closeAfterQnaAbort) {
+						this.closeAfterQnaAbort = false;
+						this.done(this.state);
+					}
 				});
 		}
 	}
@@ -150,9 +187,10 @@ export async function showFindings(
 	state: ReviewRunState,
 ): Promise<ReviewRunState> {
 	let latest = state;
-	const askQuestion = async (findingId: string): Promise<ReviewRunState | undefined> => {
+	const askQuestion = async (findingId: string, signal: AbortSignal): Promise<ReviewRunState | undefined> => {
 		const question = (await ctx.ui.input("Ask about this finding", ""))?.trim();
 		if (!question) return undefined;
+		if (signal.aborted) return undefined;
 		const finding = latest.findings.find((item) => item.id === findingId);
 		if (!finding) return undefined;
 		if (!ctx.model) {
@@ -165,6 +203,7 @@ export async function showFindings(
 			ctx.ui.notify(auth.ok ? `No API key for ${ctx.model.provider}` : auth.error, "error");
 			return undefined;
 		}
+		if (signal.aborted) return undefined;
 
 		const excerpt = loadSourceExcerpt(ctx.cwd, finding);
 		const userMessage: UserMessage = {
@@ -186,18 +225,18 @@ export async function showFindings(
 			const response = await complete(
 				ctx.model,
 				{ systemPrompt: QNA_SYSTEM_PROMPT, messages: [userMessage] },
-				{ apiKey: auth.apiKey, headers: auth.headers },
+				{ apiKey: auth.apiKey, headers: auth.headers, signal },
 			);
-			if (response.stopReason === "aborted") return undefined;
-
-			const answer = response.content
-				.filter((part): part is { type: "text"; text: string } => part.type === "text")
-				.map((part) => part.text)
-				.join("\n")
-				.trim();
-			latest = addQnaTurn(latest, finding.id, { question, answer, timestamp: Date.now() });
+			if (signal.aborted) return undefined;
+			const answer = qnaAnswerFromResponse(response);
+			if (!answer.ok) {
+				if (response.stopReason !== "aborted") ctx.ui.notify(answer.message, "error");
+				return undefined;
+			}
+			latest = addQnaTurn(latest, finding.id, { question, answer: answer.answer, timestamp: Date.now() });
 			return latest;
 		} catch (error) {
+			if (signal.aborted) return undefined;
 			ctx.ui.notify(`Could not answer finding question: ${(error as Error).message}`, "error");
 			return undefined;
 		}

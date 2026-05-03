@@ -147,18 +147,22 @@ function isPersistedQnaMap(value: unknown): value is Record<string, ReviewQnaTur
 	return Object.values(value).every((turns) => Array.isArray(turns) && turns.every(isPersistedQnaTurn));
 }
 
-function isPersistedReviewState(value: unknown): value is ReviewRunState {
-	if (!isObject(value)) return false;
-	if (value.kind !== "review-state") return false;
-	if (typeof value.runId !== "string") return false;
-	if (typeof value.createdAt !== "number") return false;
-	if (!isPersistedReviewTarget(value.target)) return false;
-	if (typeof value.rawReviewOutput !== "string") return false;
-	if (!Array.isArray(value.findings)) return false;
-	if (!value.findings.every(isPersistedReviewFinding)) return false;
-	if (!isValidCurrentIndex(value.currentIndex, value.findings)) return false;
-	if (!isPersistedQnaMap(value.qnaByFindingId)) return false;
-	return true;
+function migratePersistedReviewState(value: unknown): ReviewRunState | undefined {
+	if (!isObject(value)) return undefined;
+	if (value.kind !== "review-state") return undefined;
+	if (typeof value.runId !== "string") return undefined;
+	if (typeof value.createdAt !== "number") return undefined;
+	if (!isPersistedReviewTarget(value.target)) return undefined;
+	if (typeof value.rawReviewOutput !== "string") return undefined;
+	if (!Array.isArray(value.findings)) return undefined;
+	if (!value.findings.every(isPersistedReviewFinding)) return undefined;
+	if (!isValidCurrentIndex(value.currentIndex, value.findings)) return undefined;
+	if (value.qnaByFindingId !== undefined && !isPersistedQnaMap(value.qnaByFindingId)) return undefined;
+	if (value.qnaByFindingId !== undefined) return value as unknown as ReviewRunState;
+	return {
+		...value,
+		qnaByFindingId: value.qnaByFindingId ?? {},
+	} as ReviewRunState;
 }
 
 function persistedStateFromEntry(entry: any): unknown {
@@ -181,9 +185,8 @@ function persistedStateFromEntry(entry: any): unknown {
 export function rebuildLatestReviewState(entries: Array<any>): ReviewRunState | undefined {
 	for (let i = entries.length - 1; i >= 0; i -= 1) {
 		const state = persistedStateFromEntry(entries[i]);
-		if (isPersistedReviewState(state)) {
-			return state;
-		}
+		const migrated = migratePersistedReviewState(state);
+		if (migrated) return migrated;
 	}
 	return undefined;
 }

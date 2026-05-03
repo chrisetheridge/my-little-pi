@@ -124,6 +124,20 @@ describe("review state", () => {
 		])).toBe(latest);
 	});
 
+	it("rebuilds a pre-Q&A review state without qnaByFindingId", () => {
+		const legacy = buildInitialReviewState(target, findings, "legacy") as Partial<ReturnType<typeof buildInitialReviewState>>;
+		delete legacy.qnaByFindingId;
+
+		const rebuilt = rebuildLatestReviewState([
+			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: legacy },
+		]);
+
+		expect(rebuilt).toEqual({
+			...legacy,
+			qnaByFindingId: {},
+		});
+	});
+
 	it("skips malformed newer review state entries when rebuilding", () => {
 		const older = buildInitialReviewState(target, findings, "older");
 
