@@ -30,10 +30,15 @@ export function qnaAnswerFromResponse(
 	return { ok: true, answer };
 }
 
-export async function chooseInitialMode(ctx: ExtensionCommandContext): Promise<"uncommitted" | "base" | null> {
-	const selected = await ctx.ui.select("Review target", ["Uncommitted changes", "Local changes against base"]);
+export async function chooseInitialMode(ctx: ExtensionCommandContext): Promise<"uncommitted" | "base" | "commit" | null> {
+	const selected = await ctx.ui.select("Review target", [
+		"Uncommitted changes",
+		"Local changes against base",
+		"Specific commit",
+	]);
 	if (selected === "Uncommitted changes") return "uncommitted";
 	if (selected === "Local changes against base") return "base";
+	if (selected === "Specific commit") return "commit";
 	return null;
 }
 

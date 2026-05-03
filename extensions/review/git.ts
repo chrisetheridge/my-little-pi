@@ -227,3 +227,26 @@ export function buildBaseReviewTarget(cwd: string, baseRef: string): ReviewTarge
 		mergeBase,
 	};
 }
+
+export function buildCommitReviewTarget(cwd: string, commitRef: string): ReviewTarget {
+	const show = git(cwd, ["show", "--stat", "--patch", "--find-renames", commitRef]).stdout;
+	if (!show.trim()) throw new Error(`Could not read commit ${commitRef}`);
+
+	const files = lines(git(cwd, ["diff-tree", "--no-commit-id", "--name-only", "-r", commitRef]).stdout);
+
+	return {
+		mode: "commit",
+		label: `Commit ${commitRef}`,
+		promptContext: [
+			"# Review target: specific commit",
+			`Commit ref: ${commitRef}`,
+			"",
+			"## git show",
+			show,
+		].join("\n"),
+		changedFiles: uniqueSorted(files),
+		stagedCount: 0,
+		unstagedCount: 0,
+		commitRef,
+	};
+}

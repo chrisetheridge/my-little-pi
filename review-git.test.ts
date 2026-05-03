@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	buildBaseReviewTarget,
+	buildCommitReviewTarget,
 	buildUncommittedReviewTarget,
 	detectBaseRef,
 	getPorcelainFiles,
@@ -113,5 +114,20 @@ describe("review git helpers", () => {
 		expect(target.promptContext).toContain("branch change");
 		expect(target.promptContext).toContain("scratch.txt");
 		expect(target.promptContext).toContain("dirty");
+	});
+
+	it("builds a commit target for a specific commit", () => {
+		const cwd = makeRepo();
+		writeFileSync(join(cwd, "README.md"), "hello\nsecond\n", "utf-8");
+		run(cwd, ["commit", "-am", "second"]);
+		const commit = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf-8" }).stdout.trim();
+
+		const target = buildCommitReviewTarget(cwd, commit);
+
+		expect(target.mode).toBe("commit");
+		expect(target.commitRef).toBe(commit);
+		expect(target.changedFiles).toEqual(["README.md"]);
+		expect(target.promptContext).toContain("git show");
+		expect(target.promptContext).toContain("second");
 	});
 });

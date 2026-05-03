@@ -1,7 +1,13 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { extractFindingsBlock, normalizeFindings } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
-import { buildBaseReviewTarget, buildUncommittedReviewTarget, detectBaseRef, isGitRepository } from "./git.ts";
+import {
+	buildBaseReviewTarget,
+	buildCommitReviewTarget,
+	buildUncommittedReviewTarget,
+	detectBaseRef,
+	isGitRepository,
+} from "./git.ts";
 import { buildReviewPrompt } from "./prompt.ts";
 import { REVIEW_STATE_ENTRY_TYPE, buildInitialReviewState } from "./state.ts";
 import { chooseInitialMode, confirmPreflight, showFindings } from "./ui.ts";
@@ -55,12 +61,24 @@ export default function reviewExtension(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const baseRef = detectBaseRef(ctx.cwd) ?? (await ctx.ui.input("Base branch", "main"));
-			if (!baseRef) {
-				ctx.ui.notify("Review cancelled.", "info");
+			if (mode === "base") {
+				const baseRef = detectBaseRef(ctx.cwd) ?? (await ctx.ui.input("Base branch", "main"));
+				if (!baseRef) {
+					ctx.ui.notify("Review cancelled.", "info");
+					return;
+				}
+				await runReview(ctx, buildBaseReviewTarget(ctx.cwd, baseRef));
 				return;
 			}
-			await runReview(ctx, buildBaseReviewTarget(ctx.cwd, baseRef));
+
+			if (mode === "commit") {
+				const commitRef = (await ctx.ui.input("Commit ref", "HEAD"))?.trim();
+				if (!commitRef) {
+					ctx.ui.notify("Review cancelled.", "info");
+					return;
+				}
+				await runReview(ctx, buildCommitReviewTarget(ctx.cwd, commitRef));
+			}
 		},
 	});
 }
