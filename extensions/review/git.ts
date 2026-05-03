@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 export type ReviewMode = "uncommitted" | "base" | "commit" | "pr";
 
@@ -22,6 +24,12 @@ interface GitResult {
 	stderr: string;
 }
 
+interface PorcelainEntry {
+	status: string;
+	path: string;
+	originalPath?: string;
+}
+
 function git(cwd: string, args: string[]): GitResult {
 	const result = spawnSync("git", args, {
 		cwd,
@@ -43,12 +51,67 @@ function lines(output: string): string[] {
 		.filter(Boolean);
 }
 
-function rawLines(output: string): string[] {
-	return output.split("\n").filter(Boolean);
-}
-
 function uniqueSorted(values: string[]): string[] {
 	return Array.from(new Set(values)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+}
+
+function getPorcelainEntries(cwd: string): PorcelainEntry[] {
+	const parts = git(cwd, ["status", "--porcelain=v1", "-z"]).stdout.split("\0").filter(Boolean);
+	const entries: PorcelainEntry[] = [];
+
+	for (let i = 0; i < parts.length; i += 1) {
+		const part = parts[i]!;
+		const status = part.slice(0, 2);
+		const path = part.slice(3);
+		const entry: PorcelainEntry = { status, path };
+
+		if (status.includes("R") || status.includes("C")) {
+			entry.originalPath = parts[i + 1];
+			i += 1;
+		}
+
+		entries.push(entry);
+	}
+
+	return entries;
+}
+
+function getUntrackedFilesFromEntries(entries: PorcelainEntry[]): string[] {
+	return uniqueSorted(entries.filter((entry) => entry.status === "??").map((entry) => entry.path));
+}
+
+function formatPorcelainEntries(entries: PorcelainEntry[]): string {
+	if (entries.length === 0) return "(clean)";
+
+	return entries
+		.map((entry) => {
+			if (entry.originalPath) return `${entry.status} ${entry.originalPath} -> ${entry.path}`;
+			return `${entry.status} ${entry.path}`;
+		})
+		.join("\n");
+}
+
+function buildUntrackedFilesContext(cwd: string, files: string[]): string {
+	if (files.length === 0) return "(no untracked files)";
+
+	return files
+		.map((file) => {
+			const filePath = join(cwd, file);
+			try {
+				if (!statSync(filePath).isFile()) return `### ${file}\n(not a regular file)`;
+				return `### ${file}\n${readFileSync(filePath, "utf-8")}`;
+			} catch (error) {
+				return `### ${file}\n(unable to read untracked file: ${(error as Error).message})`;
+			}
+		})
+		.join("\n\n");
+}
+
+function countUnstagedFiles(cwd: string, untrackedFiles: string[]): number {
+	return uniqueSorted([
+		...lines(git(cwd, ["diff", "--name-only", "--", "."]).stdout),
+		...untrackedFiles,
+	]).length;
 }
 
 export function isGitRepository(cwd: string): boolean {
@@ -68,12 +131,7 @@ export function countChangedFiles(cwd: string, args: string[]): number {
 }
 
 export function getPorcelainFiles(cwd: string): string[] {
-	return uniqueSorted(
-		rawLines(git(cwd, ["status", "--porcelain"]).stdout).map((line) => {
-			const renamed = line.slice(3).split(" -> ");
-			return renamed[renamed.length - 1]!;
-		}),
-	);
+	return uniqueSorted(getPorcelainEntries(cwd).map((entry) => entry.path));
 }
 
 export function detectBaseRef(cwd: string): string | undefined {
@@ -93,7 +151,8 @@ export function detectBaseRef(cwd: string): string | undefined {
 export function buildUncommittedReviewTarget(cwd: string): ReviewTarget {
 	const staged = git(cwd, ["diff", "--cached", "--", "."]).stdout;
 	const unstaged = git(cwd, ["diff", "--", "."]).stdout;
-	const status = git(cwd, ["status", "--porcelain"]).stdout;
+	const statusEntries = getPorcelainEntries(cwd);
+	const untrackedFiles = getUntrackedFilesFromEntries(statusEntries);
 
 	return {
 		mode: "uncommitted",
@@ -107,12 +166,15 @@ export function buildUncommittedReviewTarget(cwd: string): ReviewTarget {
 			"## git diff",
 			unstaged || "(no unstaged changes)",
 			"",
-			"## git status --porcelain",
-			status || "(clean)",
+			"## untracked files",
+			buildUntrackedFilesContext(cwd, untrackedFiles),
+			"",
+			"## git status --porcelain=v1 -z",
+			formatPorcelainEntries(statusEntries),
 		].join("\n"),
-		changedFiles: getPorcelainFiles(cwd),
+		changedFiles: uniqueSorted(statusEntries.map((entry) => entry.path)),
 		stagedCount: countChangedFiles(cwd, ["diff", "--cached", "--name-only", "--", "."]),
-		unstagedCount: countChangedFiles(cwd, ["diff", "--name-only", "--", "."]),
+		unstagedCount: countUnstagedFiles(cwd, untrackedFiles),
 	};
 }
 
@@ -124,10 +186,11 @@ export function buildBaseReviewTarget(cwd: string, baseRef: string): ReviewTarge
 	const commits = git(cwd, ["log", "--oneline", `${mergeBase}..HEAD`]).stdout;
 	const staged = git(cwd, ["diff", "--cached", "--", "."]).stdout;
 	const unstaged = git(cwd, ["diff", "--", "."]).stdout;
-	const status = git(cwd, ["status", "--porcelain"]).stdout;
+	const statusEntries = getPorcelainEntries(cwd);
+	const untrackedFiles = getUntrackedFilesFromEntries(statusEntries);
 	const files = uniqueSorted([
 		...lines(git(cwd, ["diff", "--name-only", `${mergeBase}..HEAD`, "--", "."]).stdout),
-		...getPorcelainFiles(cwd),
+		...statusEntries.map((entry) => entry.path),
 	]);
 
 	return {
@@ -149,12 +212,15 @@ export function buildBaseReviewTarget(cwd: string, baseRef: string): ReviewTarge
 			"## unstaged changes",
 			unstaged || "(no unstaged changes)",
 			"",
-			"## git status --porcelain",
-			status || "(clean)",
+			"## untracked files",
+			buildUntrackedFilesContext(cwd, untrackedFiles),
+			"",
+			"## git status --porcelain=v1 -z",
+			formatPorcelainEntries(statusEntries),
 		].join("\n"),
 		changedFiles: files,
 		stagedCount: countChangedFiles(cwd, ["diff", "--cached", "--name-only", "--", "."]),
-		unstagedCount: countChangedFiles(cwd, ["diff", "--name-only", "--", "."]),
+		unstagedCount: countUnstagedFiles(cwd, untrackedFiles),
 		baseRef,
 		mergeBase,
 	};

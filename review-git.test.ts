@@ -7,6 +7,7 @@ import {
 	buildBaseReviewTarget,
 	buildUncommittedReviewTarget,
 	detectBaseRef,
+	getPorcelainFiles,
 	isGitRepository,
 } from "./extensions/review/git.ts";
 
@@ -53,6 +54,27 @@ describe("review git helpers", () => {
 		expect(target.promptContext).toContain("diff --git");
 	});
 
+	it("includes untracked file contents and counts them as unstaged", () => {
+		const cwd = makeRepo();
+		writeFileSync(join(cwd, "scratch.txt"), "untracked content\n", "utf-8");
+
+		const target = buildUncommittedReviewTarget(cwd);
+
+		expect(target.changedFiles).toEqual(["scratch.txt"]);
+		expect(target.stagedCount).toBe(0);
+		expect(target.unstagedCount).toBe(1);
+		expect(target.promptContext).toContain("## untracked files");
+		expect(target.promptContext).toContain("scratch.txt");
+		expect(target.promptContext).toContain("untracked content");
+	});
+
+	it("preserves paths with spaces from porcelain status", () => {
+		const cwd = makeRepo();
+		writeFileSync(join(cwd, "file with spaces.txt"), "content\n", "utf-8");
+
+		expect(getPorcelainFiles(cwd)).toEqual(["file with spaces.txt"]);
+	});
+
 	it("autodetects main as base and builds a base target including working tree changes", () => {
 		const cwd = makeRepo();
 		run(cwd, ["checkout", "-b", "feature"]);
@@ -70,5 +92,6 @@ describe("review git helpers", () => {
 		expect(target.promptContext).toContain("merge base");
 		expect(target.promptContext).toContain("branch change");
 		expect(target.promptContext).toContain("scratch.txt");
+		expect(target.promptContext).toContain("dirty");
 	});
 });
