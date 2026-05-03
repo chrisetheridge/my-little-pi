@@ -32,7 +32,7 @@ async function loadExtension(): Promise<LoadedExtension> {
 		}),
 	};
 
-	const { default: littleRendererExtension } = await import("./index.ts");
+	const { default: littleRendererExtension } = await import("../../../extensions/little-renderer/index.ts");
 	littleRendererExtension(pi as never);
 
 	return { tools, handlers };

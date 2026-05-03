@@ -22,7 +22,7 @@ const quotaTrackerMock = vi.hoisted(() => ({
   dispose: vi.fn(),
 }));
 
-vi.mock("./codex-usage.ts", () => ({
+vi.mock("../../../extensions/little-footer/codex-usage.ts", () => ({
   createCodexQuotaTracker: () => ({
     setEnabled: quotaTrackerMock.setEnabled,
     getSnapshot: () => quotaTrackerMock.snapshot,
@@ -139,7 +139,7 @@ async function loadExtension(env: Record<string, string> = {}): Promise<LoadedEx
   };
 
   const pi = loadPi();
-  const { default: littleFooterExtension } = await import("./index.ts");
+  const { default: littleFooterExtension } = await import("../../../extensions/little-footer/index.ts");
   littleFooterExtension(pi as never);
 
   return { commands, handlers };
@@ -362,7 +362,7 @@ describe("little-footer extension", () => {
     const [line] = component.render(200);
 
     // Untracked files can suppress diff counts; either the counts or the dirty marker are acceptable.
-    expect(line).toMatch(/\+\d+|!|\*/);
+    expect(line).toMatch(/\+\d+|git|\*/);
   });
 
   it("truncates the rendered line to the requested width", async () => {

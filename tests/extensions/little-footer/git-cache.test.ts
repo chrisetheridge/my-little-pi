@@ -12,7 +12,7 @@ vi.mock("node:child_process", () => ({
   spawnSync: mocks.spawnSync,
 }));
 
-vi.mock("./codex-usage.ts", () => ({
+vi.mock("../../../extensions/little-footer/codex-usage.ts", () => ({
   createCodexQuotaTracker: () => ({
     setEnabled: mocks.quotaTracker.setEnabled,
     getSnapshot: () => null,
@@ -89,7 +89,7 @@ async function loadExtension(): Promise<{
     ) => void,
   };
 
-  const { default: littleFooterExtension } = await import("./index.ts");
+  const { default: littleFooterExtension } = await import("../../../extensions/little-footer/index.ts");
   littleFooterExtension(pi as never);
   return { handlers };
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { detectNerdFonts, iconsFor } from "./icons.ts";
+import { detectNerdFonts, iconsFor } from "../../../extensions/little-footer/icons.ts";
 
 describe("detectNerdFonts", () => {
   const originalEnv = process.env;

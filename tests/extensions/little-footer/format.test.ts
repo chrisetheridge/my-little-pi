@@ -5,7 +5,7 @@ import {
   formatPercent,
   formatTokens,
   sanitizeStatusText,
-} from "./format.ts";
+} from "../../../extensions/little-footer/format.ts";
 
 describe("formatTokens", () => {
   it("returns 0 for zero", () => {
