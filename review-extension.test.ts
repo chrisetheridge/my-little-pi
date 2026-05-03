@@ -360,6 +360,86 @@ describe("review extension", () => {
 		expect(dialog.render(100).join("\n")).toContain("<dim>Actions are not designed yet.</dim>");
 	});
 
+	it("keeps the findings navigator alive while asking a question", async () => {
+		const complete = vi.fn(async () => ({
+			role: "assistant",
+			content: [{ type: "text", text: "Because the code needs a guard." }],
+			api: "test",
+			provider: "test",
+			model: "test/model",
+			usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+			stopReason: "stop",
+			timestamp: Date.now(),
+		}));
+		vi.doMock("@mariozechner/pi-ai", async () => ({
+			...(await vi.importActual<typeof import("@mariozechner/pi-ai")>("@mariozechner/pi-ai")),
+			complete,
+		}));
+
+		const { showFindings } = await import("./extensions/review/ui.ts");
+		const { buildInitialReviewState } = await import("./extensions/review/state.ts");
+		const state = buildInitialReviewState(
+			{
+				mode: "uncommitted",
+				label: "Uncommitted changes",
+				promptContext: "diff",
+				changedFiles: ["README.md"],
+				stagedCount: 0,
+				unstagedCount: 1,
+			},
+			[
+				{
+					id: "finding-a",
+					severity: "high",
+					file: "README.md",
+					startLine: 1,
+					title: "Test finding",
+					explanation: "Explanation.",
+					suggestedFix: "Fix.",
+					status: "open",
+				},
+				{
+					id: "finding-b",
+					severity: "low",
+					file: "README.md",
+					startLine: 2,
+					title: "Second finding",
+					explanation: "Second explanation.",
+					suggestedFix: "Second fix.",
+					status: "open",
+				},
+			],
+			"raw",
+		);
+
+		const ctx = makeCommandCtx({ cwd: makeRepo() });
+		const customOptions: any[] = [];
+		let dialog: any;
+		let updatedState: any;
+		ctx.ui.custom = vi.fn(async (factory: any, options: any) => {
+			customOptions.push(options);
+			if (customOptions.length === 1) {
+				dialog = factory(null, ctx.ui.theme, null, (updated: any) => {
+					updatedState = updated;
+				});
+				expect(dialog.render(120).join("\n")).toContain("1 / 2");
+				dialog.handleInput("q");
+				await new Promise((resolve) => setImmediate(resolve));
+				dialog.handleInput("n");
+				expect(dialog.render(120).join("\n")).toContain("2 / 2");
+				dialog.handleInput("\x1b");
+				return updatedState ?? state;
+			}
+			return "Why does this need a guard?";
+		});
+
+		await showFindings(ctx, state);
+
+		expect(customOptions[0]).toEqual(expect.objectContaining({ overlay: true }));
+		expect(customOptions[1]).toEqual(expect.objectContaining({ overlay: true }));
+		expect(complete).toHaveBeenCalled();
+	});
+
 	it("builds PR reviews from a URL and restores the original ref after review", async () => {
 		const git = await import("./extensions/review/git.ts");
 		vi.spyOn(git, "isGitRepository").mockReturnValue(true);

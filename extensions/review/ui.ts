@@ -404,6 +404,7 @@ class QuestionDialog extends Container implements Focusable {
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(this.theme.fg("dim", "Enter: submit  Esc: cancel"), 1, 0));
 		this.addChild(new DynamicBorder((text: string) => this.theme.fg("accent", text)));
+		this.focused = true;
 	}
 
 	handleInput(data: string): void {
@@ -452,6 +453,7 @@ export async function showFindings(
 					(value) => done(value || null),
 					() => done(null),
 				),
+			{ overlay: true },
 		);
 		const trimmedQuestion = question?.trim();
 		if (!trimmedQuestion) return undefined;
@@ -520,6 +522,7 @@ export async function showFindings(
 				},
 				askQuestion,
 			),
+		{ overlay: true, overlayOptions: { anchor: "center", width: "72%", minWidth: 72, maxHeight: "85%", margin: 2 } },
 	);
 
 	if (latest !== state) return latest;
