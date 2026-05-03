@@ -61,15 +61,32 @@ export function updateReviewIndex(state: ReviewRunState, index: number): ReviewR
 	};
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPersistedReviewState(value: unknown): value is ReviewRunState {
+	if (!isObject(value)) return false;
+	if (value.kind !== "review-state") return false;
+	if (typeof value.runId !== "string") return false;
+	if (typeof value.createdAt !== "number") return false;
+	if (!isObject(value.target)) return false;
+	if (typeof value.rawReviewOutput !== "string") return false;
+	if (!Array.isArray(value.findings)) return false;
+	if (typeof value.currentIndex !== "number") return false;
+	if (!isObject(value.qnaByFindingId)) return false;
+	return true;
+}
+
 export function rebuildLatestReviewState(entries: Array<any>): ReviewRunState | undefined {
 	for (let i = entries.length - 1; i >= 0; i -= 1) {
 		const entry = entries[i];
 		if (
 			entry?.type === "custom" &&
 			entry.customType === REVIEW_STATE_ENTRY_TYPE &&
-			entry.data?.kind === "review-state"
+			isPersistedReviewState(entry.data)
 		) {
-			return entry.data as ReviewRunState;
+			return entry.data;
 		}
 	}
 	return undefined;

@@ -94,4 +94,13 @@ describe("review state", () => {
 			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: latest },
 		])).toBe(latest);
 	});
+
+	it("skips malformed newer review state entries when rebuilding", () => {
+		const older = buildInitialReviewState(target, findings, "older");
+
+		expect(rebuildLatestReviewState([
+			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
+			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: { kind: "review-state" } },
+		])).toBe(older);
+	});
 });
