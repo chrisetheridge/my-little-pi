@@ -1,12 +1,13 @@
 import { complete, type AssistantMessage, type UserMessage } from "@mariozechner/pi-ai";
 import { DynamicBorder, type ExtensionCommandContext, type Theme } from "@mariozechner/pi-coding-agent";
-import { Box, Container, Input, Key, matchesKey, Spacer, Text, truncateToWidth, type Focusable } from "@mariozechner/pi-tui";
+import { Box, Container, Input, Key, matchesKey, Spacer, Text, truncateToWidth, visibleWidth, type Focusable } from "@mariozechner/pi-tui";
 import { loadSourceExcerpt } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
 import { buildQnaPrompt, formatExcerptForPrompt } from "./prompt.ts";
 import { addQnaTurn, updateFindingStatus, updateReviewIndex, type ReviewRunState } from "./state.ts";
 
 const QNA_SYSTEM_PROMPT = "You answer focused questions about one code review finding.";
+const FINDINGS_VIEWPORT_LINES = 11;
 
 export function qnaAnswerFromResponse(
 	response: Pick<AssistantMessage, "stopReason" | "content" | "errorMessage">,
@@ -97,6 +98,8 @@ export class FindingsDialog {
 	private activeQnaAbort?: AbortController;
 	private closeAfterQnaAbort = false;
 	private statusMessage?: string;
+	private scrollOffset = 0;
+	private lastWidth = 100;
 
 	constructor(
 		state: ReviewRunState,
@@ -147,12 +150,39 @@ export class FindingsDialog {
 			return;
 		}
 		if (this.state.findings.length === 0) return;
+		if (matchesKey(data, Key.up) || data === "k") {
+			this.scrollBy(-1);
+			return;
+		}
+		if (matchesKey(data, Key.down) || data === "j") {
+			this.scrollBy(1);
+			return;
+		}
+		if (matchesKey(data, Key.pageUp)) {
+			this.scrollBy(-FINDINGS_VIEWPORT_LINES);
+			return;
+		}
+		if (matchesKey(data, Key.pageDown)) {
+			this.scrollBy(FINDINGS_VIEWPORT_LINES);
+			return;
+		}
+		if (matchesKey(data, Key.home)) {
+			this.scrollOffset = 0;
+			this.invalidate();
+			return;
+		}
+		if (matchesKey(data, Key.end)) {
+			this.scrollToBottom();
+			return;
+		}
 		if (matchesKey(data, Key.right) || data === "n") {
+			this.scrollOffset = 0;
 			this.state = updateReviewIndex(this.state, this.state.currentIndex + 1);
 			this.invalidate();
 			return;
 		}
 		if (matchesKey(data, Key.left) || data === "p") {
+			this.scrollOffset = 0;
 			this.state = updateReviewIndex(this.state, this.state.currentIndex - 1);
 			this.invalidate();
 			return;
@@ -160,6 +190,7 @@ export class FindingsDialog {
 		if (data === "i") {
 			const finding = this.state.findings[this.state.currentIndex];
 			if (!finding) return;
+			this.scrollOffset = 0;
 			this.state = updateFindingStatus(this.state, finding.id, "ignored");
 			this.statusMessage = undefined;
 			this.invalidate();
@@ -197,35 +228,46 @@ export class FindingsDialog {
 	}
 
 	render(width: number): string[] {
-		return this.buildView(width).render(width);
+		this.lastWidth = width;
+		return this.buildView(width);
 	}
 
 	invalidate(): void {
 		// No cached render state to clear.
 	}
 
-	private buildView(width: number): Container {
-		const root = new Container();
-		const accentBorder = () => new DynamicBorder((text: string) => this.theme.fg("accent", text));
-		const body = new Box(1, 1, (text: string) => this.decorateBody(text));
-		const contentWidth = Math.max(20, width - 8);
+	private buildView(width: number): string[] {
+		const lines: string[] = [];
+		const innerWidth = Math.max(0, width - 4);
+		const bodyWidth = Math.max(20, innerWidth);
+		const bodyLines = this.buildBodyContent(bodyWidth).render(bodyWidth);
+		const maxScroll = Math.max(0, bodyLines.length - FINDINGS_VIEWPORT_LINES);
+		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset, maxScroll));
+		const visibleBodyLines = bodyLines.slice(this.scrollOffset, this.scrollOffset + FINDINGS_VIEWPORT_LINES);
 
-		root.addChild(accentBorder());
-		root.addChild(new Spacer(1));
-		root.addChild(new Text(this.theme.fg("accent", "Code review findings"), 1, 0));
-		root.addChild(new Text(this.theme.fg("muted", this.state.target.label), 1, 0));
+		lines.push(this.borderLine(width, "┌", "─", "┐"));
+		lines.push(this.boxLine(width, this.theme.fg("accent", "Code review findings")));
+		lines.push(this.boxLine(width, this.theme.fg("muted", this.state.target.label)));
 		if (this.statusMessage) {
-			root.addChild(new Text(this.theme.fg("dim", this.statusMessage), 1, 0));
+			lines.push(this.boxLine(width, this.theme.fg("dim", this.statusMessage)));
 		}
-		root.addChild(new Spacer(1));
+		lines.push(this.borderLine(width, "├", "─", "┤"));
 
-		body.addChild(this.buildBodyContent(contentWidth));
-		root.addChild(body);
-		root.addChild(new Spacer(1));
-		root.addChild(new Text(this.theme.fg("dim", truncateToWidth(this.buildFooterHint(), contentWidth)), 1, 0));
-		root.addChild(new Spacer(1));
-		root.addChild(accentBorder());
-		return root;
+		if (visibleBodyLines.length === 0) {
+			lines.push(this.boxLine(width, this.theme.fg("dim", "No actionable findings found.")));
+		} else {
+			for (const line of visibleBodyLines) {
+				lines.push(this.boxLine(width, line));
+			}
+			for (let i = visibleBodyLines.length; i < FINDINGS_VIEWPORT_LINES; i += 1) {
+				lines.push(this.boxLine(width, ""));
+			}
+		}
+
+		lines.push(this.borderLine(width, "├", "─", "┤"));
+		lines.push(this.boxLine(width, this.theme.fg("dim", truncateToWidth(this.buildFooterHint(maxScroll > 0), innerWidth))));
+		lines.push(this.borderLine(width, "└", "─", "┘"));
+		return lines;
 	}
 
 	private buildBodyContent(contentWidth: number): Container {
@@ -285,17 +327,45 @@ export class FindingsDialog {
 		return content;
 	}
 
+	private borderLine(width: number, left: string, fill: string, right: string): string {
+		const safeWidth = Math.max(2, width);
+		return this.theme.fg("accent", `${left}${fill.repeat(Math.max(0, safeWidth - 2))}${right}`);
+	}
+
+	private boxLine(width: number, text: string): string {
+		const innerWidth = Math.max(0, width - 4);
+		const clipped = truncateToWidth(text, innerWidth);
+		const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(clipped)));
+		return this.theme.fg("accent", `│ ${clipped}${padding} │`);
+	}
+
+	private scrollBy(delta: number): void {
+		const bodyWidth = Math.max(20, Math.max(0, this.lastWidth - 4));
+		const bodyLines = this.buildBodyContent(bodyWidth).render(bodyWidth);
+		const maxScroll = Math.max(0, bodyLines.length - FINDINGS_VIEWPORT_LINES);
+		this.scrollOffset = Math.max(0, Math.min(this.scrollOffset + delta, maxScroll));
+		this.invalidate();
+	}
+
+	private scrollToBottom(): void {
+		const bodyWidth = Math.max(20, Math.max(0, this.lastWidth - 4));
+		const bodyLines = this.buildBodyContent(bodyWidth).render(bodyWidth);
+		this.scrollOffset = Math.max(0, bodyLines.length - FINDINGS_VIEWPORT_LINES);
+		this.invalidate();
+	}
+
 	private decorateBody(text: string): string {
 		const bg = (this.theme as { bg?: (role: string, value: string) => string }).bg;
 		return typeof bg === "function" ? bg.call(this.theme, "customMessageBg", text) : text;
 	}
 
-	private buildFooterHint(): string {
+	private buildFooterHint(canScroll: boolean): string {
 		if (this.state.findings.length === 0) {
 			return "Esc: close";
 		}
 
-		return `n/right: next  p/left: previous  i: ignore  q: ask${this.asking ? "..." : ""}  a: actions unavailable  Esc: close`;
+		const scrollHint = canScroll ? "  Up/Down or j/k: scroll  PgUp/PgDn: page  Home/End: top/bottom" : "";
+		return `n/right: next  p/left: previous  i: ignore  q: ask${this.asking ? "..." : ""}  a: actions unavailable${scrollHint}  Esc: close`;
 	}
 }
 
@@ -382,10 +452,6 @@ export async function showFindings(
 					(value) => done(value || null),
 					() => done(null),
 				),
-			{
-				overlay: true,
-				overlayOptions: { anchor: "center", width: "60%", minWidth: 54, maxHeight: 16, margin: 2 },
-			},
 		);
 		const trimmedQuestion = question?.trim();
 		if (!trimmedQuestion) return undefined;
@@ -454,10 +520,6 @@ export async function showFindings(
 				},
 				askQuestion,
 			),
-		{
-			overlay: true,
-			overlayOptions: { width: "84%", minWidth: 72, maxHeight: "78%", anchor: "center", margin: 2 },
-		},
 	);
 
 	if (latest !== state) return latest;

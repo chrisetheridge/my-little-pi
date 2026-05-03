@@ -32,11 +32,6 @@ function lastAssistantText(ctx: Pick<ExtensionCommandContext, "sessionManager">)
 	return "";
 }
 
-function currentLeafId(ctx: ExtensionCommandContext): string | undefined {
-	const branch = ctx.sessionManager.getBranch();
-	return (branch[branch.length - 1] as any)?.id;
-}
-
 function assistantText(response: Pick<AssistantMessage, "content">): string {
 	return response.content
 		.filter((part): part is { type: "text"; text: string } => part.type === "text")
@@ -149,22 +144,17 @@ export default function reviewExtension(pi: ExtensionAPI): void {
 }
 
 async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Promise<void> {
-	try {
-		if (!(await confirmPreflight(ctx, target))) {
-			ctx.ui.notify("Review cancelled.", "info");
-			return;
-		}
+	const cwd = ctx.cwd;
+	const originalRef = target.originalRef;
+	if (!(await confirmPreflight(ctx, target))) {
+		ctx.ui.notify("Review cancelled.", "info");
+		return;
+	}
 
-		const leafId = currentLeafId(ctx);
-		if (!leafId) {
-			ctx.ui.notify("Cannot start review without a session leaf.", "error");
-			return;
-		}
-
-		const prompt = buildReviewPrompt(target);
-		const result = await ctx.fork(leafId, {
-			position: "at",
-			withSession: async (reviewCtx) => {
+	const prompt = buildReviewPrompt(target);
+	await ctx.newSession({
+		withSession: async (reviewCtx) => {
+			try {
 				await reviewCtx.sendUserMessage(prompt);
 				await reviewCtx.waitForIdle();
 				const output = lastAssistantText(reviewCtx);
@@ -206,15 +196,11 @@ async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Pr
 						details: updated,
 					});
 				}
-			},
-		});
-
-		if (result.cancelled) {
-			ctx.ui.notify("Review cancelled.", "info");
-		}
-	} finally {
-		if (target.originalRef && !restoreOriginalRef(ctx.cwd, target.originalRef)) {
-			ctx.ui.notify(`Failed to restore original git ref ${target.originalRef}.`, "error");
-		}
-	}
+			} finally {
+				if (originalRef && !restoreOriginalRef(cwd, originalRef)) {
+					reviewCtx.ui.notify(`Failed to restore original git ref ${originalRef}.`, "error");
+				}
+			}
+		},
+	});
 }

@@ -198,12 +198,47 @@ describe("review Q&A", () => {
 			async () => undefined,
 		);
 
+		dialog.handleInput("\x1b[F");
 		const rendered = dialog.render(100).join("\n");
 
 		expect(rendered).toContain("Source excerpt");
 		expect(rendered).toContain("return items[index];");
 		expect(rendered).toContain("Q: Why?");
 		expect(rendered).toContain("A: Because it can crash.");
+	});
+
+	it("renders with borders and supports scrolling through long findings", () => {
+		let state = buildInitialReviewState(target, [finding], "raw output");
+		for (let i = 0; i < 10; i += 1) {
+			state = addQnaTurn(state, "finding-a", {
+				question: `Question ${i}`,
+				answer: `Answer ${i}`,
+				timestamp: i,
+			});
+		}
+
+		const dialog = new FindingsDialog(
+			state,
+			makeSourceRoot(),
+			{ fg: (_role: string, text: string) => text } as never,
+			() => undefined,
+			async () => true,
+			async () => undefined,
+		);
+
+		const initial = dialog.render(100).join("\n");
+		expect(initial).toContain("┌");
+		expect(initial).toContain("└");
+		expect(initial).toContain("Source excerpt");
+		expect(initial).not.toContain("Q: Question 9");
+
+		dialog.handleInput("\x1b[F");
+
+		const scrolled = dialog.render(100).join("\n");
+		expect(scrolled).toContain("┌");
+		expect(scrolled).toContain("└");
+		expect(scrolled).toContain("Q: Question 9");
+		expect(scrolled).not.toContain("Q: Question 0");
 	});
 
 	it("confirms before closing when findings remain open", async () => {

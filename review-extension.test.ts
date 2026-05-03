@@ -41,11 +41,15 @@ function makeRepo(): string {
 }
 
 function makeReviewCtx(assistantText = '```review-findings\n{"summary":"none","findings":[]}\n```', overrides: Partial<any> = {}) {
-	return {
+	const ctx = {
 		...makeCommandCtx({ cwd: "/tmp/replacement-project" }),
 		sendMessage: vi.fn(async () => {}),
 		sendUserMessage: vi.fn(async () => {}),
 		waitForIdle: vi.fn(async () => {}),
+		newSession: vi.fn(async (options: any) => {
+			await options?.withSession?.(ctx);
+			return { cancelled: false };
+		}),
 		sessionManager: {
 			getBranch: () => [
 				{ id: "root", type: "message", message: { role: "user", content: [{ type: "text", text: "start" }] } },
@@ -62,6 +66,7 @@ function makeReviewCtx(assistantText = '```review-findings\n{"summary":"none","f
 		},
 		...overrides,
 	};
+	return ctx;
 }
 
 function makeCommandCtx(overrides: Partial<any> = {}) {
@@ -127,27 +132,20 @@ describe("review extension", () => {
 		expect(ctx.ui.notify).toHaveBeenCalledWith("Select a model before running /review.", "error");
 	});
 
-	it("shows findings with the replacement review context after fork", async () => {
+	it("shows findings in the current session context", async () => {
 		const { pi, commands } = makePi();
 		const { default: reviewExtension } = await import("./extensions/review/index.ts");
 		reviewExtension(pi as never);
 
-		const replacementCtx = makeReviewCtx();
-		const ctx = makeCommandCtx({
-			cwd: makeRepo(),
-			fork: vi.fn(async (_entryId: string, options: any) => {
-				await options?.withSession?.(replacementCtx);
-				return { cancelled: false };
-			}),
-		});
+		const ctx = makeReviewCtx(undefined, { cwd: makeRepo() });
 
 		await commands.get("review").handler("", ctx);
 
-		expect(ctx.ui.custom).not.toHaveBeenCalled();
-		expect(replacementCtx.ui.custom).toHaveBeenCalled();
+		expect(ctx.fork).not.toHaveBeenCalled();
+		expect(ctx.ui.custom).toHaveBeenCalled();
 	});
 
-	it("persists initial and updated review state in the replacement session when a finding is ignored", async () => {
+	it("persists initial and updated review state when a finding is ignored", async () => {
 		const assistantText = [
 			"```review-findings",
 			JSON.stringify({
@@ -172,29 +170,22 @@ describe("review extension", () => {
 		const { default: reviewExtension } = await import("./extensions/review/index.ts");
 		reviewExtension(pi as never);
 
-		const replacementCtx = makeReviewCtx(assistantText);
-		replacementCtx.ui.custom = vi.fn(async (factory: any) => {
+		const ctx = makeReviewCtx(assistantText, { cwd: makeRepo() });
+		ctx.ui.custom = vi.fn(async (factory: any) => {
 			let result;
-			const component = factory(null, replacementCtx.ui.theme, null, (updated: any) => {
+			const component = factory(null, ctx.ui.theme, null, (updated: any) => {
 				result = updated;
 			});
 			component.handleInput("i");
 			component.handleInput("\x1b");
 			return result;
 		});
-		const ctx = makeCommandCtx({
-			cwd: makeRepo(),
-			fork: vi.fn(async (_entryId: string, options: any) => {
-				await options?.withSession?.(replacementCtx);
-				return { cancelled: false };
-			}),
-		});
 
 		await commands.get("review").handler("", ctx);
 
 		expect(pi.appendEntry).not.toHaveBeenCalled();
-		expect(replacementCtx.sendMessage).toHaveBeenCalledTimes(2);
-		expect(replacementCtx.sendMessage).toHaveBeenNthCalledWith(
+		expect(ctx.sendMessage).toHaveBeenCalledTimes(2);
+		expect(ctx.sendMessage).toHaveBeenNthCalledWith(
 			1,
 			expect.objectContaining({
 				customType: "review-state",
@@ -207,7 +198,7 @@ describe("review extension", () => {
 				}),
 			}),
 		);
-		expect(replacementCtx.sendMessage).toHaveBeenNthCalledWith(
+		expect(ctx.sendMessage).toHaveBeenNthCalledWith(
 			2,
 			expect.objectContaining({
 				customType: "review-state",
@@ -220,23 +211,20 @@ describe("review extension", () => {
 				}),
 			}),
 		);
-		expect(replacementCtx.ui.custom).toHaveBeenCalled();
+		expect(ctx.ui.custom).toHaveBeenCalled();
 	});
 
-	it("handles cancelled review fork without parsing or showing findings", async () => {
+	it("runs review without forking the session", async () => {
 		const { pi, commands } = makePi();
 		const { default: reviewExtension } = await import("./extensions/review/index.ts");
 		reviewExtension(pi as never);
 
-		const ctx = makeCommandCtx({
-			cwd: makeRepo(),
-			fork: vi.fn(async () => ({ cancelled: true })),
-		});
+		const ctx = makeReviewCtx(undefined, { cwd: makeRepo() });
 
 		await commands.get("review").handler("", ctx);
 
-		expect(ctx.ui.notify).toHaveBeenCalledWith("Review cancelled.", "info");
-		expect(ctx.ui.custom).not.toHaveBeenCalled();
+		expect(ctx.fork).not.toHaveBeenCalled();
+		expect(ctx.ui.custom).toHaveBeenCalled();
 	});
 
 	it("opens recovery UI for malformed assistant output and cancel does not show findings", async () => {
@@ -244,28 +232,22 @@ describe("review extension", () => {
 		const { default: reviewExtension } = await import("./extensions/review/index.ts");
 		reviewExtension(pi as never);
 
-		const replacementCtx = makeReviewCtx("not json");
-		replacementCtx.ui.select = vi.fn(async () => "Cancel");
-		const ctx = makeCommandCtx({
-			cwd: makeRepo(),
-			fork: vi.fn(async (_entryId: string, options: any) => {
-				await options?.withSession?.(replacementCtx);
-				return { cancelled: false };
-			}),
-		});
+		const ctx = makeReviewCtx("not json", { cwd: makeRepo() });
+		ctx.ui.select = vi.fn()
+			.mockResolvedValueOnce("Uncommitted changes")
+			.mockResolvedValueOnce("Cancel");
 
 		await commands.get("review").handler("", ctx);
 
-		expect(replacementCtx.ui.select).toHaveBeenCalledWith(
+		expect(ctx.ui.select).toHaveBeenCalledWith(
 			expect.stringContaining("Review findings parse failed."),
 			["Retry extraction", "Cancel"],
 		);
-		expect(replacementCtx.ui.select.mock.calls[0]?.[0]).toContain("Missing ```review-findings fenced block.");
-		expect(replacementCtx.ui.select.mock.calls[0]?.[0]).toContain("not json");
-		expect(replacementCtx.ui.notify).toHaveBeenCalledWith("Review cancelled.", "info");
-		expect(replacementCtx.sendMessage).not.toHaveBeenCalled();
+		expect(ctx.ui.select.mock.calls[1]?.[0]).toContain("Missing ```review-findings fenced block.");
+		expect(ctx.ui.select.mock.calls[1]?.[0]).toContain("not json");
+		expect(ctx.ui.notify).toHaveBeenCalledWith("Review cancelled.", "info");
+		expect(ctx.sendMessage).not.toHaveBeenCalled();
 		expect(ctx.ui.custom).not.toHaveBeenCalled();
-		expect(replacementCtx.ui.custom).not.toHaveBeenCalled();
 	});
 
 	it("retries malformed assistant output through formatter and then opens findings", async () => {
@@ -305,22 +287,17 @@ describe("review extension", () => {
 		const { default: reviewExtension } = await import("./extensions/review/index.ts");
 		reviewExtension(pi as never);
 
-		const replacementCtx = makeReviewCtx("plain markdown with a real issue");
-		replacementCtx.ui.select = vi.fn(async () => "Retry extraction");
-		replacementCtx.ui.custom = vi.fn(async () => undefined);
-		const ctx = makeCommandCtx({
-			cwd: makeRepo(),
-			fork: vi.fn(async (_entryId: string, options: any) => {
-				await options?.withSession?.(replacementCtx);
-				return { cancelled: false };
-			}),
-		});
+		const ctx = makeReviewCtx("plain markdown with a real issue", { cwd: makeRepo() });
+		ctx.ui.select = vi.fn()
+			.mockResolvedValueOnce("Uncommitted changes")
+			.mockResolvedValueOnce("Retry extraction");
+		ctx.ui.custom = vi.fn(async () => undefined);
 
 		await commands.get("review").handler("", ctx);
 
-		expect(replacementCtx.modelRegistry.getApiKeyAndHeaders).toHaveBeenCalledWith(replacementCtx.model);
+		expect(ctx.modelRegistry.getApiKeyAndHeaders).toHaveBeenCalledWith(ctx.model);
 		expect(complete).toHaveBeenCalledWith(
-			replacementCtx.model,
+			ctx.model,
 			{
 				messages: [
 					expect.objectContaining({
@@ -334,7 +311,7 @@ describe("review extension", () => {
 			},
 			{ apiKey: "test-key", headers: { "x-test": "1" } },
 		);
-		expect(replacementCtx.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+		expect(ctx.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
 			customType: "review-state",
 			details: expect.objectContaining({
 				kind: "review-state",
@@ -342,7 +319,7 @@ describe("review extension", () => {
 				findings: [expect.objectContaining({ title: "Recovered issue" })],
 			}),
 		}));
-		expect(replacementCtx.ui.custom).toHaveBeenCalled();
+		expect(ctx.ui.custom).toHaveBeenCalled();
 	});
 
 	it("shows actions as unavailable in the findings dialog", async () => {
@@ -410,8 +387,8 @@ describe("review extension", () => {
 				input: vi.fn(async () => "https://github.com/example/project/pull/123"),
 				confirm: vi.fn(async () => true),
 			},
-			fork: vi.fn(async (_entryId: string, options: any) => {
-				await options?.withSession?.(replacementCtx);
+			newSession: vi.fn(async (_options: any) => {
+				await _options?.withSession?.(replacementCtx);
 				return { cancelled: false };
 			}),
 		});
@@ -446,7 +423,7 @@ describe("review extension", () => {
 				select: vi.fn(async () => "Pull request URL"),
 				input: vi.fn(async () => "https://github.com/example/project/pull/123"),
 			},
-			fork: vi.fn(async () => ({ cancelled: false })),
+			newSession: vi.fn(async () => ({ cancelled: false })),
 		});
 
 		await expect(commands.get("review").handler("", ctx)).rejects.toThrow("could not read PR diff");
@@ -454,6 +431,6 @@ describe("review extension", () => {
 		expect(git.getCurrentRef).toHaveBeenCalledWith(ctx.cwd);
 		expect(restore).toHaveBeenCalledWith(ctx.cwd, "main");
 		expect(ctx.ui.notify).toHaveBeenCalledWith("Failed to restore original git ref main.", "error");
-		expect(ctx.fork).not.toHaveBeenCalled();
+		expect(ctx.newSession).not.toHaveBeenCalled();
 	});
 });
