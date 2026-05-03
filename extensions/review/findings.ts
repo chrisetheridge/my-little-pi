@@ -64,6 +64,33 @@ function normalizeSeverity(severity: string | undefined): FindingSeverity {
 	return "medium";
 }
 
+function validateOptionalStringField(finding: Record<string, unknown>, field: keyof RawFinding): void {
+	if (finding[field] !== undefined && typeof finding[field] !== "string") {
+		throw new Error(`Finding ${field} must be a string.`);
+	}
+}
+
+function validateOptionalNumberField(finding: Record<string, unknown>, field: keyof RawFinding): void {
+	if (finding[field] !== undefined && typeof finding[field] !== "number") {
+		throw new Error(`Finding ${field} must be a number.`);
+	}
+}
+
+function validateRawFindingSchema(value: unknown, index: number): RawFinding {
+	if (!isObject(value)) {
+		throw new Error(`Finding at index ${index} must be an object.`);
+	}
+
+	for (const field of ["id", "severity", "file", "title", "explanation", "suggestedFix"] as const) {
+		validateOptionalStringField(value, field);
+	}
+	for (const field of ["startLine", "startColumn", "endLine", "endColumn"] as const) {
+		validateOptionalNumberField(value, field);
+	}
+
+	return value;
+}
+
 function normalizeRelativeFile(file: string | undefined): string {
 	if (typeof file !== "string") {
 		throw new Error("Finding file is required.");
@@ -176,12 +203,13 @@ export function extractFindingsBlock(output: string): ParsedFindings {
 
 	return {
 		summary: parsed.summary,
-		findings: parsed.findings as RawFinding[],
+		findings: parsed.findings.map((finding, index) => validateRawFindingSchema(finding, index)),
 	};
 }
 
 export function normalizeFindings(rawFindings: RawFinding[]): ReviewFinding[] {
-	return rawFindings.map((rawFinding) => {
+	return rawFindings.map((value, index) => {
+		const rawFinding = validateRawFindingSchema(value, index);
 		const file = normalizeRelativeFile(rawFinding.file);
 		const startLine = requireLine(rawFinding.startLine, "startLine");
 		const endLine = optionalPositiveInteger(rawFinding.endLine, "endLine");

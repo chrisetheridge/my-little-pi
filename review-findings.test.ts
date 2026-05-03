@@ -130,6 +130,39 @@ describe("review findings", () => {
 		])).toThrow("title");
 	});
 
+	it("throws a controlled error when a finding entry is not an object", () => {
+		expect(() => normalizeFindings([null as any])).toThrow(
+			"Finding at index 0 must be an object.",
+		);
+	});
+
+	it("throws a controlled error when an optional string field has the wrong type", () => {
+		expect(() => normalizeFindings([
+			{
+				severity: 5,
+				file: "a.ts",
+				startLine: 1,
+				title: "t",
+				explanation: "e",
+				suggestedFix: "f",
+			} as any,
+		])).toThrow("Finding severity must be a string.");
+	});
+
+	it("throws a controlled error when an optional numeric field has the wrong type", () => {
+		expect(() => normalizeFindings([
+			{
+				severity: "low",
+				file: "a.ts",
+				startLine: 1,
+				startColumn: "2",
+				title: "t",
+				explanation: "e",
+				suggestedFix: "f",
+			} as any,
+		])).toThrow("Finding startColumn must be a number.");
+	});
+
 	it("loads a bounded source excerpt with selected line markers", () => {
 		const cwd = mkdtempSync(join(tmpdir(), "review-findings-"));
 		mkdirSync(join(cwd, "src"));
