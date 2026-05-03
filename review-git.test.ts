@@ -1,0 +1,74 @@
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import {
+	buildBaseReviewTarget,
+	buildUncommittedReviewTarget,
+	detectBaseRef,
+	isGitRepository,
+} from "./extensions/review/git.ts";
+
+function run(cwd: string, args: string[]): void {
+	const result = spawnSync("git", args, { cwd, stdio: "pipe" });
+	if (result.status !== 0) {
+		throw new Error(result.stderr.toString() || result.stdout.toString());
+	}
+}
+
+function makeRepo(): string {
+	const cwd = mkdtempSync(join(tmpdir(), "review-git-"));
+	run(cwd, ["init", "-b", "main"]);
+	run(cwd, ["config", "user.email", "test@example.com"]);
+	run(cwd, ["config", "user.name", "Test User"]);
+	writeFileSync(join(cwd, "README.md"), "hello\n", "utf-8");
+	run(cwd, ["add", "README.md"]);
+	run(cwd, ["commit", "-m", "initial"]);
+	return cwd;
+}
+
+describe("review git helpers", () => {
+	it("detects whether cwd is inside a git repository", () => {
+		const cwd = makeRepo();
+		const outside = mkdtempSync(join(tmpdir(), "review-no-git-"));
+
+		expect(isGitRepository(cwd)).toBe(true);
+		expect(isGitRepository(outside)).toBe(false);
+	});
+
+	it("builds an uncommitted target with staged and unstaged changes", () => {
+		const cwd = makeRepo();
+		writeFileSync(join(cwd, "README.md"), "hello\nworld\n", "utf-8");
+		writeFileSync(join(cwd, "new.txt"), "new\n", "utf-8");
+		run(cwd, ["add", "new.txt"]);
+
+		const target = buildUncommittedReviewTarget(cwd);
+
+		expect(target.mode).toBe("uncommitted");
+		expect(target.changedFiles).toEqual(["README.md", "new.txt"]);
+		expect(target.stagedCount).toBe(1);
+		expect(target.unstagedCount).toBe(1);
+		expect(target.promptContext).toContain("git diff --cached");
+		expect(target.promptContext).toContain("diff --git");
+	});
+
+	it("autodetects main as base and builds a base target including working tree changes", () => {
+		const cwd = makeRepo();
+		run(cwd, ["checkout", "-b", "feature"]);
+		writeFileSync(join(cwd, "README.md"), "hello\nbranch\n", "utf-8");
+		run(cwd, ["commit", "-am", "branch change"]);
+		writeFileSync(join(cwd, "scratch.txt"), "dirty\n", "utf-8");
+
+		expect(detectBaseRef(cwd)).toBe("main");
+
+		const target = buildBaseReviewTarget(cwd, "main");
+		expect(target.mode).toBe("base");
+		expect(target.baseRef).toBe("main");
+		expect(target.changedFiles).toContain("README.md");
+		expect(target.changedFiles).toContain("scratch.txt");
+		expect(target.promptContext).toContain("merge base");
+		expect(target.promptContext).toContain("branch change");
+		expect(target.promptContext).toContain("scratch.txt");
+	});
+});
