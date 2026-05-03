@@ -304,18 +304,33 @@ export function buildPullRequestReviewTarget(
 	cwd: string,
 	prUrl: string,
 	runner = defaultCommandRunner,
+	knownOriginalRef?: string,
 ): ReviewTarget {
 	ensureCleanWorktree(cwd, runner);
-	const originalRef = getCurrentRef(cwd, runner);
+	const originalRef = knownOriginalRef ?? getCurrentRef(cwd, runner);
 	const checkout = runCommand(cwd, "gh", ["pr", "checkout", prUrl], runner);
 	if (!checkout.ok) {
 		throw new Error(checkout.stderr.trim() || checkout.stdout.trim() || `Could not checkout pull request ${prUrl}`);
 	}
 
-	const nameOnlyArgs = ["diff", "--name-only", `${originalRef}...HEAD`, "--", "."];
-	const diffArgs = ["diff", `${originalRef}...HEAD`, "--", "."];
-	const changedFiles = uniqueSorted(lines(git(cwd, nameOnlyArgs, runner).stdout));
-	const diff = git(cwd, diffArgs, runner).stdout;
+	let changedFilesResult: GitCommandResult;
+	let diffResult: GitCommandResult;
+	try {
+		changedFilesResult = runCommand(cwd, "gh", ["pr", "diff", prUrl, "--name-only"], runner);
+		if (!changedFilesResult.ok) {
+			throw new Error(changedFilesResult.stderr.trim() || changedFilesResult.stdout.trim() || "Could not read PR files");
+		}
+		diffResult = runCommand(cwd, "gh", ["pr", "diff", prUrl, "--patch"], runner);
+		if (!diffResult.ok) {
+			throw new Error(diffResult.stderr.trim() || diffResult.stdout.trim() || "Could not read PR diff");
+		}
+	} catch (error) {
+		restoreOriginalRef(cwd, originalRef, runner);
+		throw error;
+	}
+
+	const changedFiles = uniqueSorted(lines(changedFilesResult.stdout));
+	const diff = diffResult.stdout;
 
 	return {
 		mode: "pr",
@@ -325,7 +340,7 @@ export function buildPullRequestReviewTarget(
 			`Pull request URL: ${prUrl}`,
 			`Original ref: ${originalRef}`,
 			"",
-			`## git diff ${originalRef}...HEAD -- .`,
+			"## gh pr diff --patch",
 			diff || "(no pull request diff)",
 		].join("\n"),
 		changedFiles,

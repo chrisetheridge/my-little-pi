@@ -7,6 +7,7 @@ import {
 	buildPullRequestReviewTarget,
 	buildUncommittedReviewTarget,
 	detectBaseRef,
+	getCurrentRef,
 	isGitRepository,
 	restoreOriginalRef,
 } from "./git.ts";
@@ -89,7 +90,17 @@ export default function reviewExtension(pi: ExtensionAPI): void {
 					ctx.ui.notify("Review cancelled.", "info");
 					return;
 				}
-				await runReview(ctx, buildPullRequestReviewTarget(ctx.cwd, prUrl));
+				const originalRef = getCurrentRef(ctx.cwd);
+				let target: ReviewTarget;
+				try {
+					target = buildPullRequestReviewTarget(ctx.cwd, prUrl, undefined, originalRef);
+				} catch (error) {
+					if (!restoreOriginalRef(ctx.cwd, originalRef)) {
+						ctx.ui.notify(`Failed to restore original git ref ${originalRef}.`, "error");
+					}
+					throw error;
+				}
+				await runReview(ctx, target);
 			}
 		},
 	});

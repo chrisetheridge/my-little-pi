@@ -259,6 +259,7 @@ describe("review extension", () => {
 	it("builds PR reviews from a URL and restores the original ref after review", async () => {
 		const git = await import("./extensions/review/git.ts");
 		vi.spyOn(git, "isGitRepository").mockReturnValue(true);
+		vi.spyOn(git, "getCurrentRef").mockReturnValue("main");
 		vi.spyOn(git, "buildPullRequestReviewTarget").mockReturnValue({
 			mode: "pr",
 			label: "Pull request https://github.com/example/project/pull/123",
@@ -293,8 +294,39 @@ describe("review extension", () => {
 		expect(git.buildPullRequestReviewTarget).toHaveBeenCalledWith(
 			ctx.cwd,
 			"https://github.com/example/project/pull/123",
+			undefined,
+			"main",
 		);
 		expect(restore).toHaveBeenCalledWith(ctx.cwd, "main");
 		expect(replacementCtx.sendUserMessage).toHaveBeenCalledWith(expect.stringContaining("PR diff"));
+	});
+
+	it("notifies when PR review cannot restore after target construction failure", async () => {
+		const git = await import("./extensions/review/git.ts");
+		vi.spyOn(git, "isGitRepository").mockReturnValue(true);
+		vi.spyOn(git, "buildPullRequestReviewTarget").mockImplementation(() => {
+			throw new Error("could not read PR diff");
+		});
+		vi.spyOn(git, "getCurrentRef").mockReturnValue("main");
+		const restore = vi.spyOn(git, "restoreOriginalRef").mockReturnValue(false);
+		const { pi, commands } = makePi();
+		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		reviewExtension(pi as never);
+
+		const ctx = makeCommandCtx({
+			ui: {
+				...makeCommandCtx().ui,
+				select: vi.fn(async () => "Pull request URL"),
+				input: vi.fn(async () => "https://github.com/example/project/pull/123"),
+			},
+			fork: vi.fn(async () => ({ cancelled: false })),
+		});
+
+		await expect(commands.get("review").handler("", ctx)).rejects.toThrow("could not read PR diff");
+
+		expect(git.getCurrentRef).toHaveBeenCalledWith(ctx.cwd);
+		expect(restore).toHaveBeenCalledWith(ctx.cwd, "main");
+		expect(ctx.ui.notify).toHaveBeenCalledWith("Failed to restore original git ref main.", "error");
+		expect(ctx.fork).not.toHaveBeenCalled();
 	});
 });

@@ -45,8 +45,8 @@ describe("review PR git helpers", () => {
 			"git status --porcelain": ok(""),
 			"git branch --show-current": ok("main\n"),
 			[`gh pr checkout ${prUrl}`]: ok("Switched to branch 'feature'\n"),
-			"git diff --name-only main...HEAD -- .": ok("README.md\nsrc/review.ts\n"),
-			"git diff main...HEAD -- .": ok("diff --git a/README.md b/README.md\n"),
+			[`gh pr diff ${prUrl} --name-only`]: ok("README.md\nsrc/review.ts\n"),
+			[`gh pr diff ${prUrl} --patch`]: ok("diff --git a/README.md b/README.md\n"),
 		});
 
 		const target = buildPullRequestReviewTarget("/repo", prUrl, runner);
@@ -55,16 +55,39 @@ describe("review PR git helpers", () => {
 			"git status --porcelain",
 			"git branch --show-current",
 			`gh pr checkout ${prUrl}`,
-			"git diff --name-only main...HEAD -- .",
-			"git diff main...HEAD -- .",
+			`gh pr diff ${prUrl} --name-only`,
+			`gh pr diff ${prUrl} --patch`,
 		]);
+		expect(commands).not.toContain("git diff --name-only main...HEAD -- .");
+		expect(commands).not.toContain("git diff main...HEAD -- .");
 		expect(target.mode).toBe("pr");
 		expect(target.prUrl).toBe(prUrl);
 		expect(target.originalRef).toBe("main");
 		expect(target.changedFiles).toEqual(["README.md", "src/review.ts"]);
 		expect(target.promptContext).toContain(prUrl);
 		expect(target.promptContext).toContain("Original ref: main");
+		expect(target.promptContext).toContain("## gh pr diff --patch");
 		expect(target.promptContext).toContain("diff --git a/README.md b/README.md");
+	});
+
+	it("restores the original ref when PR diff building fails after checkout", () => {
+		const prUrl = "https://github.com/example/project/pull/123";
+		const { commands, runner } = makeRunner({
+			"git status --porcelain": ok(""),
+			"git branch --show-current": ok("main\n"),
+			[`gh pr checkout ${prUrl}`]: ok("Switched to branch 'feature'\n"),
+			[`gh pr diff ${prUrl} --name-only`]: fail("could not read PR diff"),
+			"git checkout main": ok("Switched to branch 'main'\n"),
+		});
+
+		expect(() => buildPullRequestReviewTarget("/repo", prUrl, runner)).toThrow("could not read PR diff");
+		expect(commands).toEqual([
+			"git status --porcelain",
+			"git branch --show-current",
+			`gh pr checkout ${prUrl}`,
+			`gh pr diff ${prUrl} --name-only`,
+			"git checkout main",
+		]);
 	});
 
 	it("restores the original ref", () => {
