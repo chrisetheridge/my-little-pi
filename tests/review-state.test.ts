@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { ReviewFinding } from "./extensions/review/findings.ts";
-import type { ReviewTarget } from "./extensions/review/git.ts";
-import { buildInitialReviewState, discardFinding, updateFindingNote, updateFindingStatus, updateReviewIndex } from "./extensions/review/state.ts";
+import type { ReviewFinding } from "../extensions/review/findings.ts";
+import type { ReviewTarget } from "../extensions/review/git.ts";
+import { buildInitialReviewState, discardFinding, updateFindingNote, updateFindingStatus, updateReviewIndex } from "../extensions/review/state.ts";
 
 const target: ReviewTarget = {
 	mode: "uncommitted",

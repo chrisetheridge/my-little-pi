@@ -10,7 +10,7 @@ import {
 	detectBaseRef,
 	getPorcelainFiles,
 	isGitRepository,
-} from "./extensions/review/git.ts";
+} from "../extensions/review/git.ts";
 
 function run(cwd: string, args: string[]): void {
 	const result = spawnSync("git", args, { cwd, stdio: "pipe" });

@@ -5,7 +5,7 @@ import {
 	restoreOriginalRef,
 	type GitCommandResult,
 	type GitCommandRunner,
-} from "./extensions/review/git.ts";
+} from "../extensions/review/git.ts";
 
 function ok(stdout = ""): GitCommandResult {
 	return { ok: true, stdout, stderr: "" };

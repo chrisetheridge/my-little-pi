@@ -102,7 +102,7 @@ function makeCommandCtx(overrides: Partial<any> = {}) {
 describe("review extension", () => {
 	it("registers the review command", async () => {
 		const { pi, commands } = makePi();
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		const { default: reviewExtension } = await import("../extensions/review/index.ts");
 
 		reviewExtension(pi as never);
 
@@ -112,7 +112,7 @@ describe("review extension", () => {
 
 	it("rejects /review without interactive UI", async () => {
 		const { pi, commands } = makePi();
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		const { default: reviewExtension } = await import("../extensions/review/index.ts");
 		reviewExtension(pi as never);
 
 		const ctx = makeCommandCtx({ hasUI: false });
@@ -123,7 +123,7 @@ describe("review extension", () => {
 
 	it("rejects /review without a selected model", async () => {
 		const { pi, commands } = makePi();
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		const { default: reviewExtension } = await import("../extensions/review/index.ts");
 		reviewExtension(pi as never);
 
 		const ctx = makeCommandCtx({ model: undefined });
@@ -134,7 +134,7 @@ describe("review extension", () => {
 
 	it("shows findings in the current session context", async () => {
 		const { pi, commands } = makePi();
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		const { default: reviewExtension } = await import("../extensions/review/index.ts");
 		reviewExtension(pi as never);
 
 		const ctx = makeReviewCtx(undefined, { cwd: makeRepo() });
@@ -146,8 +146,8 @@ describe("review extension", () => {
 	});
 
 	it("lets the user fix, discard, and submit findings", async () => {
-		const { FindingsDialog } = await import("./extensions/review/ui.ts");
-		const { buildInitialReviewState } = await import("./extensions/review/state.ts");
+		const { FindingsDialog } = await import("../extensions/review/ui.ts");
+		const { buildInitialReviewState } = await import("../extensions/review/state.ts");
 		const state = buildInitialReviewState({
 			mode: "uncommitted",
 			label: "Uncommitted changes",
@@ -200,7 +200,7 @@ describe("review extension", () => {
 
 	it("runs review without forking the session", async () => {
 		const { pi, commands } = makePi();
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		const { default: reviewExtension } = await import("../extensions/review/index.ts");
 		reviewExtension(pi as never);
 
 		const ctx = makeReviewCtx(undefined, { cwd: makeRepo() });
@@ -213,7 +213,7 @@ describe("review extension", () => {
 
 	it("opens recovery UI for malformed assistant output and cancel does not show findings", async () => {
 		const { pi, commands } = makePi();
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		const { default: reviewExtension } = await import("../extensions/review/index.ts");
 		reviewExtension(pi as never);
 
 		const ctx = makeReviewCtx("not json", { cwd: makeRepo() });
@@ -268,7 +268,7 @@ describe("review extension", () => {
 		}));
 
 		const { pi, commands } = makePi();
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		const { default: reviewExtension } = await import("../extensions/review/index.ts");
 		reviewExtension(pi as never);
 
 		const ctx = makeReviewCtx("plain markdown with a real issue", { cwd: makeRepo() });
@@ -299,8 +299,8 @@ describe("review extension", () => {
 	});
 
 	it("renders the findings dialog with fix, discard, and submit actions", async () => {
-		const { FindingsDialog } = await import("./extensions/review/ui.ts");
-		const { buildInitialReviewState } = await import("./extensions/review/state.ts");
+		const { FindingsDialog } = await import("../extensions/review/ui.ts");
+		const { buildInitialReviewState } = await import("../extensions/review/state.ts");
 		const state = buildInitialReviewState({
 			mode: "uncommitted",
 			label: "Uncommitted changes",
@@ -339,8 +339,8 @@ describe("review extension", () => {
 	});
 
 	it("prompts for a note when fixing with notes", async () => {
-		const { FindingsDialog } = await import("./extensions/review/ui.ts");
-		const { buildInitialReviewState } = await import("./extensions/review/state.ts");
+		const { FindingsDialog } = await import("../extensions/review/ui.ts");
+		const { buildInitialReviewState } = await import("../extensions/review/state.ts");
 		const state = buildInitialReviewState({
 			mode: "uncommitted",
 			label: "Uncommitted changes",
@@ -403,7 +403,7 @@ describe("review extension", () => {
 			"```",
 		].join("\n");
 		const { pi, commands } = makePi();
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		const { default: reviewExtension } = await import("../extensions/review/index.ts");
 		reviewExtension(pi as never);
 
 		const reviewCtx = makeReviewCtx(assistantText, { cwd: makeRepo() });
@@ -442,7 +442,7 @@ describe("review extension", () => {
 	});
 
 	it("builds PR reviews from a URL and restores the original ref after review", async () => {
-		const git = await import("./extensions/review/git.ts");
+		const git = await import("../extensions/review/git.ts");
 		vi.spyOn(git, "isGitRepository").mockReturnValue(true);
 		vi.spyOn(git, "getCurrentRef").mockReturnValue("main");
 		vi.spyOn(git, "buildPullRequestReviewTarget").mockReturnValue({
@@ -457,7 +457,7 @@ describe("review extension", () => {
 		});
 		const restore = vi.spyOn(git, "restoreOriginalRef").mockReturnValue(true);
 		const { pi, commands } = makePi();
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		const { default: reviewExtension } = await import("../extensions/review/index.ts");
 		reviewExtension(pi as never);
 
 		const replacementCtx = makeReviewCtx();
@@ -487,7 +487,7 @@ describe("review extension", () => {
 	});
 
 	it("notifies when PR review cannot restore after target construction failure", async () => {
-		const git = await import("./extensions/review/git.ts");
+		const git = await import("../extensions/review/git.ts");
 		vi.spyOn(git, "isGitRepository").mockReturnValue(true);
 		vi.spyOn(git, "buildPullRequestReviewTarget").mockImplementation(() => {
 			throw new Error("could not read PR diff");
@@ -495,7 +495,7 @@ describe("review extension", () => {
 		vi.spyOn(git, "getCurrentRef").mockReturnValue("main");
 		const restore = vi.spyOn(git, "restoreOriginalRef").mockReturnValue(false);
 		const { pi, commands } = makePi();
-		const { default: reviewExtension } = await import("./extensions/review/index.ts");
+		const { default: reviewExtension } = await import("../extensions/review/index.ts");
 		reviewExtension(pi as never);
 
 		const ctx = makeCommandCtx({

@@ -6,7 +6,7 @@ import {
 	extractFindingsBlock,
 	loadSourceExcerpt,
 	normalizeFindings,
-} from "./extensions/review/findings.ts";
+} from "../extensions/review/findings.ts";
 
 describe("review findings", () => {
 	it("extracts a fenced review-findings JSON block", () => {

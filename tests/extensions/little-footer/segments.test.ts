@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
-import { iconsFor } from "./icons.ts";
+import { iconsFor } from "../../../extensions/little-footer/icons.ts";
 import {
   renderCost,
   renderExtensionStatus,
@@ -11,7 +11,7 @@ import {
   renderThinking,
   renderTokens,
   type ThemeFn,
-} from "./segments.ts";
+} from "../../../extensions/little-footer/segments.ts";
 
 const fakeTheme: ThemeFn = {
   fg: (role: ThemeColor, text: string) => `<${role}>${text}</${role}>`,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatModelDisplay } from "./model-name.ts";
+import { formatModelDisplay } from "../../../extensions/little-footer/model-name.ts";
 
 describe("formatModelDisplay", () => {
   it("returns empty string for empty input", () => {

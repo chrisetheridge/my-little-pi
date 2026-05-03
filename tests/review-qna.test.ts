@@ -2,11 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ReviewFinding } from "./extensions/review/findings.ts";
-import type { ReviewTarget } from "./extensions/review/git.ts";
-import { buildReviewFixPrompt } from "./extensions/review/prompt.ts";
-import { buildInitialReviewState } from "./extensions/review/state.ts";
-import { FindingsDialog } from "./extensions/review/ui.ts";
+import type { ReviewFinding } from "../extensions/review/findings.ts";
+import type { ReviewTarget } from "../extensions/review/git.ts";
+import { buildReviewFixPrompt } from "../extensions/review/prompt.ts";
+import { buildInitialReviewState } from "../extensions/review/state.ts";
+import { FindingsDialog } from "../extensions/review/ui.ts";
 
 const finding: ReviewFinding = {
 	id: "finding-a",
