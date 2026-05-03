@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -66,6 +66,26 @@ describe("review git helpers", () => {
 		expect(target.promptContext).toContain("## untracked files");
 		expect(target.promptContext).toContain("scratch.txt");
 		expect(target.promptContext).toContain("untracked content");
+	});
+
+	it("expands untracked directories to nested files in review context", () => {
+		const cwd = makeRepo();
+		mkdirSync(join(cwd, "src"));
+		writeFileSync(join(cwd, "src", "new-file.ts"), "export const value = 1;\n", "utf-8");
+
+		const uncommittedTarget = buildUncommittedReviewTarget(cwd);
+		expect(uncommittedTarget.changedFiles).toContain("src/new-file.ts");
+		expect(uncommittedTarget.changedFiles).not.toContain("src/");
+		expect(uncommittedTarget.unstagedCount).toBe(1);
+		expect(uncommittedTarget.promptContext).toContain("src/new-file.ts");
+		expect(uncommittedTarget.promptContext).toContain("export const value = 1;");
+
+		const baseTarget = buildBaseReviewTarget(cwd, "main");
+		expect(baseTarget.changedFiles).toContain("src/new-file.ts");
+		expect(baseTarget.changedFiles).not.toContain("src/");
+		expect(baseTarget.unstagedCount).toBe(1);
+		expect(baseTarget.promptContext).toContain("src/new-file.ts");
+		expect(baseTarget.promptContext).toContain("export const value = 1;");
 	});
 
 	it("preserves paths with spaces from porcelain status", () => {

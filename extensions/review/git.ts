@@ -56,7 +56,9 @@ function uniqueSorted(values: string[]): string[] {
 }
 
 function getPorcelainEntries(cwd: string): PorcelainEntry[] {
-	const parts = git(cwd, ["status", "--porcelain=v1", "-z"]).stdout.split("\0").filter(Boolean);
+	const parts = git(cwd, ["status", "--porcelain=v1", "-z", "--untracked-files=all"]).stdout
+		.split("\0")
+		.filter(Boolean);
 	const entries: PorcelainEntry[] = [];
 
 	for (let i = 0; i < parts.length; i += 1) {
