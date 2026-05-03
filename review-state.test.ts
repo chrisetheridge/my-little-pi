@@ -103,4 +103,45 @@ describe("review state", () => {
 			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: { kind: "review-state" } },
 		])).toBe(older);
 	});
+
+	it("skips newer review state entries with malformed findings", () => {
+		const older = buildInitialReviewState(target, findings, "older");
+		const malformed = {
+			...buildInitialReviewState(target, findings, "newer"),
+			findings: [{}],
+		};
+
+		expect(rebuildLatestReviewState([
+			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
+			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: malformed },
+		])).toBe(older);
+	});
+
+	it("skips newer review state entries with malformed qna turns", () => {
+		const older = buildInitialReviewState(target, findings, "older");
+		const malformed = {
+			...buildInitialReviewState(target, findings, "newer"),
+			qnaByFindingId: {
+				"finding-a": [{ question: "Why?", answer: "Because.", timestamp: "now" }],
+			},
+		};
+
+		expect(rebuildLatestReviewState([
+			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
+			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: malformed },
+		])).toBe(older);
+	});
+
+	it("skips newer review state entries with out-of-range current index", () => {
+		const older = buildInitialReviewState(target, findings, "older");
+		const malformed = {
+			...buildInitialReviewState(target, findings, "newer"),
+			currentIndex: findings.length,
+		};
+
+		expect(rebuildLatestReviewState([
+			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: older },
+			{ type: "custom", customType: REVIEW_STATE_ENTRY_TYPE, data: malformed },
+		])).toBe(older);
+	});
 });

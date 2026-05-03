@@ -65,16 +65,89 @@ function isObject(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isStringArray(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isNonEmptyString(value: unknown): value is string {
+	return typeof value === "string" && value.trim() !== "";
+}
+
+function isFiniteInteger(value: unknown): value is number {
+	return typeof value === "number" && Number.isFinite(value) && Number.isInteger(value);
+}
+
+function isOptionalString(value: unknown): boolean {
+	return value === undefined || typeof value === "string";
+}
+
+function isOptionalPositiveInteger(value: unknown): boolean {
+	return value === undefined || (isFiniteInteger(value) && value >= 1);
+}
+
+function isPersistedReviewTarget(value: unknown): value is ReviewRunState["target"] {
+	if (!isObject(value)) return false;
+	if (!isNonEmptyString(value.mode)) return false;
+	if (!isNonEmptyString(value.label)) return false;
+	if (!isStringArray(value.changedFiles)) return false;
+	if (typeof value.stagedCount !== "number" || !Number.isFinite(value.stagedCount)) return false;
+	if (typeof value.unstagedCount !== "number" || !Number.isFinite(value.unstagedCount)) return false;
+
+	for (const field of ["baseRef", "mergeBase", "commitRef", "prUrl", "originalRef"] as const) {
+		if (!isOptionalString(value[field])) return false;
+	}
+	return true;
+}
+
+function isPersistedReviewFinding(value: unknown): value is ReviewFinding {
+	if (!isObject(value)) return false;
+	if (!isNonEmptyString(value.id)) return false;
+	if (!["critical", "high", "medium", "low"].includes(value.severity as string)) return false;
+	if (!isNonEmptyString(value.file)) return false;
+	if (!isFiniteInteger(value.startLine) || value.startLine < 1) return false;
+	if (!isOptionalPositiveInteger(value.startColumn)) return false;
+	if (!isOptionalPositiveInteger(value.endLine)) return false;
+	if (!isOptionalPositiveInteger(value.endColumn)) return false;
+	if (typeof value.endLine === "number" && value.endLine < value.startLine) return false;
+	if (!isNonEmptyString(value.title)) return false;
+	if (!isNonEmptyString(value.explanation)) return false;
+	if (!isNonEmptyString(value.suggestedFix)) return false;
+	if (value.status !== "open" && value.status !== "ignored") return false;
+	return true;
+}
+
+function isValidCurrentIndex(value: unknown, findings: unknown[]): boolean {
+	if (!isFiniteInteger(value)) return false;
+	if (findings.length === 0) return value === 0;
+	return value >= 0 && value < findings.length;
+}
+
+function isPersistedQnaTurn(value: unknown): value is ReviewQnaTurn {
+	if (!isObject(value)) return false;
+	return (
+		typeof value.question === "string" &&
+		typeof value.answer === "string" &&
+		typeof value.timestamp === "number" &&
+		Number.isFinite(value.timestamp)
+	);
+}
+
+function isPersistedQnaMap(value: unknown): value is Record<string, ReviewQnaTurn[]> {
+	if (!isObject(value)) return false;
+	return Object.values(value).every((turns) => Array.isArray(turns) && turns.every(isPersistedQnaTurn));
+}
+
 function isPersistedReviewState(value: unknown): value is ReviewRunState {
 	if (!isObject(value)) return false;
 	if (value.kind !== "review-state") return false;
 	if (typeof value.runId !== "string") return false;
 	if (typeof value.createdAt !== "number") return false;
-	if (!isObject(value.target)) return false;
+	if (!isPersistedReviewTarget(value.target)) return false;
 	if (typeof value.rawReviewOutput !== "string") return false;
 	if (!Array.isArray(value.findings)) return false;
-	if (typeof value.currentIndex !== "number") return false;
-	if (!isObject(value.qnaByFindingId)) return false;
+	if (!value.findings.every(isPersistedReviewFinding)) return false;
+	if (!isValidCurrentIndex(value.currentIndex, value.findings)) return false;
+	if (!isPersistedQnaMap(value.qnaByFindingId)) return false;
 	return true;
 }
 
