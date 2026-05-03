@@ -1,6 +1,6 @@
 import { complete, type AssistantMessage, type UserMessage } from "@mariozechner/pi-ai";
 import { DynamicBorder, type ExtensionCommandContext, type Theme } from "@mariozechner/pi-coding-agent";
-import { Box, Container, Key, matchesKey, Spacer, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { Box, Container, Input, Key, matchesKey, Spacer, Text, truncateToWidth, type Focusable } from "@mariozechner/pi-tui";
 import { loadSourceExcerpt } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
 import { buildQnaPrompt, formatExcerptForPrompt } from "./prompt.ts";
@@ -299,6 +299,61 @@ export class FindingsDialog {
 	}
 }
 
+class QuestionDialog extends Container implements Focusable {
+	private readonly input: Input;
+	private _focused = false;
+
+	get focused(): boolean {
+		return this._focused;
+	}
+
+	set focused(value: boolean) {
+		this._focused = value;
+		this.input.focused = value;
+	}
+
+	constructor(
+		private readonly theme: Theme,
+		title: string,
+		prompt: string,
+		prefill = "",
+		private readonly onSubmit: (value: string) => void,
+		private readonly onCancel: () => void,
+	) {
+		super();
+		this.input = new Input();
+		this.input.setValue(prefill);
+
+		this.addChild(new DynamicBorder((text: string) => this.theme.fg("accent", text)));
+		this.addChild(new Text(this.theme.fg("accent", title), 1, 0));
+		this.addChild(new Text(this.theme.fg("muted", prompt), 1, 0));
+		this.addChild(new Spacer(1));
+		const inputBox = new Box(1, 1, (text: string) => this.decorateBody(text));
+		inputBox.addChild(this.input);
+		this.addChild(inputBox);
+		this.addChild(new Spacer(1));
+		this.addChild(new Text(this.theme.fg("dim", "Enter: submit  Esc: cancel"), 1, 0));
+		this.addChild(new DynamicBorder((text: string) => this.theme.fg("accent", text)));
+	}
+
+	handleInput(data: string): void {
+		if (matchesKey(data, Key.escape) || matchesKey(data, Key.ctrl("c"))) {
+			this.onCancel();
+			return;
+		}
+		if (matchesKey(data, Key.enter)) {
+			this.onSubmit(this.input.getValue().trim());
+			return;
+		}
+		this.input.handleInput(data);
+	}
+
+	private decorateBody(text: string): string {
+		const bg = (this.theme as { bg?: (role: string, value: string) => string }).bg;
+		return typeof bg === "function" ? bg.call(this.theme, "customMessageBg", text) : text;
+	}
+}
+
 export async function showFindings(
 	ctx: ExtensionCommandContext,
 	state: ReviewRunState,
@@ -310,11 +365,31 @@ export async function showFindings(
 		signal: AbortSignal,
 	): Promise<ReviewRunState | undefined> => {
 		latest = currentState;
-		const question = (await ctx.ui.input("Ask about this finding", ""))?.trim();
-		if (!question) return undefined;
-		if (signal.aborted) return undefined;
 		const finding = currentState.findings.find((item) => item.id === findingId);
 		if (!finding) return undefined;
+		const question = await ctx.ui.custom<string | null>(
+			(_tui, theme, _keybindings, done) =>
+				new QuestionDialog(
+					theme,
+					"Ask about this finding",
+					[
+						`${finding.file}:${finding.startLine}`,
+						finding.title,
+						"",
+						"Ask a focused question about this finding.",
+					].join("\n"),
+					"",
+					(value) => done(value || null),
+					() => done(null),
+				),
+			{
+				overlay: true,
+				overlayOptions: { anchor: "center", width: "60%", minWidth: 54, maxHeight: 16, margin: 2 },
+			},
+		);
+		const trimmedQuestion = question?.trim();
+		if (!trimmedQuestion) return undefined;
+		if (signal.aborted) return undefined;
 		if (!ctx.model) {
 			ctx.ui.notify("Select a model before asking about a finding.", "error");
 			return undefined;
@@ -337,7 +412,7 @@ export async function showFindings(
 					targetLabel: currentState.target.label,
 					sourceExcerpt: formatExcerptForPrompt(excerpt),
 					priorTurns: currentState.qnaByFindingId[finding.id] ?? [],
-					question,
+					question: trimmedQuestion,
 				}),
 			}],
 			timestamp: Date.now(),
@@ -355,7 +430,7 @@ export async function showFindings(
 				if (response.stopReason !== "aborted") ctx.ui.notify(answer.message, "error");
 				return undefined;
 			}
-			latest = addQnaTurn(currentState, finding.id, { question, answer: answer.answer, timestamp: Date.now() });
+			latest = addQnaTurn(currentState, finding.id, { question: trimmedQuestion, answer: answer.answer, timestamp: Date.now() });
 			return latest;
 		} catch (error) {
 			if (signal.aborted) return undefined;
