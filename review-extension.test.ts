@@ -42,6 +42,7 @@ function makeRepo(): string {
 function makeReviewCtx(assistantText = '```review-findings\n{"summary":"none","findings":[]}\n```', overrides: Partial<any> = {}) {
 	return {
 		...makeCommandCtx({ cwd: "/tmp/replacement-project" }),
+		sendMessage: vi.fn(async () => {}),
 		sendUserMessage: vi.fn(async () => {}),
 		waitForIdle: vi.fn(async () => {}),
 		sessionManager: {
@@ -142,7 +143,7 @@ describe("review extension", () => {
 		expect(replacementCtx.ui.custom).toHaveBeenCalled();
 	});
 
-	it("persists initial and updated review state when a finding is ignored", async () => {
+	it("persists initial and updated review state in the replacement session when a finding is ignored", async () => {
 		const assistantText = [
 			"```review-findings",
 			JSON.stringify({
@@ -161,6 +162,9 @@ describe("review extension", () => {
 			"```",
 		].join("\n");
 		const { pi, commands } = makePi();
+		pi.appendEntry.mockImplementation(() => {
+			throw new Error("stale appendEntry");
+		});
 		const { default: reviewExtension } = await import("./extensions/review/index.ts");
 		reviewExtension(pi as never);
 
@@ -184,25 +188,35 @@ describe("review extension", () => {
 
 		await commands.get("review").handler("", ctx);
 
-		expect(pi.appendEntry).toHaveBeenCalledTimes(2);
-		expect(pi.appendEntry).toHaveBeenNthCalledWith(
+		expect(pi.appendEntry).not.toHaveBeenCalled();
+		expect(replacementCtx.sendMessage).toHaveBeenCalledTimes(2);
+		expect(replacementCtx.sendMessage).toHaveBeenNthCalledWith(
 			1,
-			"review-state",
 			expect.objectContaining({
-				kind: "review-state",
-				currentIndex: 0,
-				findings: [expect.objectContaining({ status: "open" })],
+				customType: "review-state",
+				content: "",
+				display: false,
+				details: expect.objectContaining({
+					kind: "review-state",
+					currentIndex: 0,
+					findings: [expect.objectContaining({ status: "open" })],
+				}),
 			}),
 		);
-		expect(pi.appendEntry).toHaveBeenNthCalledWith(
+		expect(replacementCtx.sendMessage).toHaveBeenNthCalledWith(
 			2,
-			"review-state",
 			expect.objectContaining({
-				kind: "review-state",
-				currentIndex: 0,
-				findings: [expect.objectContaining({ status: "ignored" })],
+				customType: "review-state",
+				content: "",
+				display: false,
+				details: expect.objectContaining({
+					kind: "review-state",
+					currentIndex: 0,
+					findings: [expect.objectContaining({ status: "ignored" })],
+				}),
 			}),
 		);
+		expect(replacementCtx.ui.custom).toHaveBeenCalled();
 	});
 
 	it("handles cancelled review fork without parsing or showing findings", async () => {

@@ -51,7 +51,7 @@ export default function reviewExtension(pi: ExtensionAPI): void {
 			}
 
 			if (mode === "uncommitted") {
-				await runReview(pi, ctx, buildUncommittedReviewTarget(ctx.cwd));
+				await runReview(ctx, buildUncommittedReviewTarget(ctx.cwd));
 				return;
 			}
 
@@ -60,12 +60,12 @@ export default function reviewExtension(pi: ExtensionAPI): void {
 				ctx.ui.notify("Review cancelled.", "info");
 				return;
 			}
-			await runReview(pi, ctx, buildBaseReviewTarget(ctx.cwd, baseRef));
+			await runReview(ctx, buildBaseReviewTarget(ctx.cwd, baseRef));
 		},
 	});
 }
 
-async function runReview(pi: ExtensionAPI, ctx: ExtensionCommandContext, target: ReviewTarget): Promise<void> {
+async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Promise<void> {
 	if (!(await confirmPreflight(ctx, target))) {
 		ctx.ui.notify("Review cancelled.", "info");
 		return;
@@ -95,10 +95,20 @@ async function runReview(pi: ExtensionAPI, ctx: ExtensionCommandContext, target:
 			}
 
 			const state = buildInitialReviewState(target, findings, output);
-			pi.appendEntry(REVIEW_STATE_ENTRY_TYPE, state);
+			await reviewCtx.sendMessage({
+				customType: REVIEW_STATE_ENTRY_TYPE,
+				content: "",
+				display: false,
+				details: state,
+			});
 			const updated = await showFindings(reviewCtx, state);
 			if (updated !== state) {
-				pi.appendEntry(REVIEW_STATE_ENTRY_TYPE, updated);
+				await reviewCtx.sendMessage({
+					customType: REVIEW_STATE_ENTRY_TYPE,
+					content: "",
+					display: false,
+					details: updated,
+				});
 			}
 		},
 	});

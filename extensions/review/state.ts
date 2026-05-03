@@ -151,15 +151,25 @@ function isPersistedReviewState(value: unknown): value is ReviewRunState {
 	return true;
 }
 
+function persistedStateFromEntry(entry: any): unknown {
+	if (entry?.type === "custom" && entry.customType === REVIEW_STATE_ENTRY_TYPE) {
+		return entry.data;
+	}
+	if (
+		entry?.type === "message" &&
+		entry.message?.role === "custom" &&
+		entry.message.customType === REVIEW_STATE_ENTRY_TYPE
+	) {
+		return entry.message.details;
+	}
+	return undefined;
+}
+
 export function rebuildLatestReviewState(entries: Array<any>): ReviewRunState | undefined {
 	for (let i = entries.length - 1; i >= 0; i -= 1) {
-		const entry = entries[i];
-		if (
-			entry?.type === "custom" &&
-			entry.customType === REVIEW_STATE_ENTRY_TYPE &&
-			isPersistedReviewState(entry.data)
-		) {
-			return entry.data;
+		const state = persistedStateFromEntry(entries[i]);
+		if (isPersistedReviewState(state)) {
+			return state;
 		}
 	}
 	return undefined;
