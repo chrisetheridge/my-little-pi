@@ -124,11 +124,11 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 			onPersist: (snapshot) => persist(pi, snapshot),
 		});
 
-		const focusReference = (args: string, ctx: ExtensionContext, alias = false): void => {
+		const focusReference = (args: string, ctx: ExtensionContext): void => {
 			lastCtx = ctx;
 			const reference = args.trim();
 			if (!reference) {
-				ctx.ui.notify(alias ? "usage: /set-focused-issue <issue-ref>" : "usage: /focus-issue <issue-ref|clear|refresh|show|inject>", "warning");
+				ctx.ui.notify("usage: /focus-issue <issue-ref|clear|refresh|show|inject>", "warning");
 				return;
 			}
 			controller.setFocus(reference);
@@ -172,11 +172,6 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 				}
 				focusReference(command, ctx);
 			},
-		});
-
-		pi.registerCommand("set-focused-issue", {
-			description: "Set the focused external issue",
-			handler: async (args, ctx) => focusReference(args, ctx, true),
 		});
 
 		pi.on("session_start", (_event, ctx) => {

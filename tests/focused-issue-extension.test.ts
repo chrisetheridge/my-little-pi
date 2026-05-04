@@ -93,7 +93,6 @@ describe("focused issue extension", () => {
 		});
 
 		expect(commands.has("focus-issue")).toBe(true);
-		expect(commands.has("set-focused-issue")).toBe(true);
 		expect(commands.get("focus-issue")?.getArgumentCompletions?.("re")).toEqual([{ label: "refresh", value: "refresh" }]);
 	});
 
@@ -113,21 +112,6 @@ describe("focused issue extension", () => {
 		expect(provider.fetchIssue).toHaveBeenCalledTimes(1);
 		expect(ctx.ui.setWidget).toHaveBeenCalledWith("focused-issue", expect.any(Function), { placement: "aboveEditor" });
 		expect(ctx.ui.notify).toHaveBeenCalledWith("focused issue set: ENG-123", "info");
-	});
-
-	it("supports the set-focused-issue alias", async () => {
-		const provider: IssueProvider = {
-			id: "linear",
-			label: "Linear",
-			canHandle: () => true,
-			fetchIssue: vi.fn(() => Promise.resolve({ ok: true, issue: issue() })),
-		};
-		const { commands } = loadExtension(provider);
-		const ctx = createCtx();
-
-		await commands.get("set-focused-issue")?.handler("ENG-123", ctx);
-
-		expect(provider.fetchIssue).toHaveBeenCalledWith("ENG-123", expect.any(AbortSignal));
 	});
 
 	it("clears, refreshes, and shows focus", async () => {

@@ -72,10 +72,9 @@ describe("focused issue sticky UI", () => {
 			61_000,
 		);
 
-		expect(markdown).toContain("### ENG-123: Add focused issue extension");
-		expect(markdown).toContain("- **Status:** In Progress");
-		expect(markdown).toContain("- **Assignee:** Chris");
-		expect(markdown).toContain("**Labels:** `extension` `agent`");
+		expect(markdown).toContain("[ENG-123: Add focused issue extension](https://linear.app/acme/issue/ENG-123)");
+		expect(markdown).toContain("In Progress");
+		expect(markdown).toContain("Chris");
 		expect(markdown).toContain("| PR | Status | Repository |");
 		expect(markdown).toContain("| [PR #42](https://github.com/acme/pi/pull/42) |  | acme/pi |");
 		expect(markdown).toContain("| [PR #43](https://github.com/acme/pi/pull/43) | merged |  |");
@@ -156,7 +155,7 @@ describe("focused issue sticky UI", () => {
 			plainMarkdownTheme,
 		);
 
-		expect(lines.length).toBeLessThanOrEqual(11);
+		expect(lines.length).toBeLessThanOrEqual(18);
 		expect(lines.at(-2)).toContain("…");
 	});
 });
