@@ -70,7 +70,7 @@ function updateWidget(ctx: ExtensionContext | undefined, controller: FocusedIssu
 
 function notifyError(ctx: ExtensionContext | undefined, state: FocusedIssueState): void {
 	if (!ctx?.hasUI || state.status !== "error" || !state.error) return;
-	ctx.ui.notify(`focused issue: ${state.error.message}`, state.error.retryable ? "warning" : "error");
+	ctx.ui.notify(`Error focusing issue: ${state.error.message}`, state.error.retryable ? "warning" : "error");
 }
 
 function persist(pi: ExtensionAPI, snapshot: FocusedIssueSnapshot): void {
@@ -128,15 +128,11 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 			lastCtx = ctx;
 			const reference = args.trim();
 			if (!reference) {
-				ctx.ui.notify("usage: /focus-issue <issue-ref|clear|refresh|show|inject>", "warning");
+				ctx.ui.notify("Usage: /focus-issue <issue-ref|clear|refresh|show|inject>", "warning");
 				return;
 			}
 			controller.setFocus(reference);
 			updateWidget(ctx, controller);
-			const state = controller.getState();
-			if (state.status !== "error") {
-				ctx.ui.notify(`focused issue set: ${reference}`, "info");
-			}
 		};
 
 		pi.registerCommand("focus-issue", {
@@ -153,17 +149,17 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 				if (command === "clear") {
 					controller.clear();
 					updateWidget(ctx, controller);
-					ctx.ui.notify("focused issue cleared", "info");
+					ctx.ui.notify("Focused issue cleared", "info");
 					return;
 				}
 				if (command === "refresh" || command === "inject") {
 					if (!controller.getState().reference) {
-						ctx.ui.notify("no focused issue to refresh", "warning");
+						ctx.ui.notify("No focused issue to refresh", "warning");
 						return;
 					}
 					controller.refresh({ reinject: command === "inject" });
 					updateWidget(ctx, controller);
-					ctx.ui.notify(command === "inject" ? "focused issue will be reinjected after refresh" : "focused issue refresh started", "info");
+					ctx.ui.notify(command === "inject" ? "Focused issue will be reinjected after refresh" : "Focused issue refresh started", "info");
 					return;
 				}
 				if (command === "show") {
@@ -196,9 +192,6 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 			lastCtx = ctx;
 			controller.setFocus(reference);
 			updateWidget(ctx, controller);
-			if (ctx.hasUI && controller.getState().status !== "error") {
-				ctx.ui.notify(`focused issue detected: ${reference}`, "info");
-			}
 			return { action: "continue" };
 		});
 
