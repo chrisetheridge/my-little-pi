@@ -1,4 +1,4 @@
-import type { FocusedIssue, IssueProvider, IssueProviderError, IssueProviderResult, IssuePullRequest } from "./types.ts";
+import type { FocusedIssue, IssueProvider, IssueProviderError, IssueProviderResult, IssuePullRequest } from "../types.ts";
 
 export interface LinearReference {
 	kind: "key" | "url";

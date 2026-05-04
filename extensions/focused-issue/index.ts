@@ -1,6 +1,6 @@
 import type { BeforeAgentStartEventResult, ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
-import { createLinearProvider } from "./linear.ts";
+import { createLinearProvider } from "./providers/linear.ts";
 import {
 	buildFocusedIssueMessage,
 	formatFocusedIssueContext,

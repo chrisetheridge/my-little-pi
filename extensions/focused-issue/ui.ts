@@ -3,7 +3,7 @@ import { Markdown, truncateToWidth, visibleWidth, type Component, type MarkdownT
 
 import type { FocusedIssueState } from "./types.ts";
 
-const MAX_PANEL_CONTENT_LINES = 8;
+const MAX_PANEL_CONTENT_LINES = 15;
 
 function compactText(value: string | undefined, maxLength: number): string | undefined {
 	if (!value) return undefined;
@@ -38,24 +38,27 @@ export function formatFocusedIssueMarkdown(state: FocusedIssueState, now = Date.
 	const lines: string[] = [];
 
 	if (state.issue) {
-		const fetched = formatRelativeTime(state.fetchedAt, now);
-		lines.push(`### ${state.issue.key}: ${state.issue.title}`);
-		lines.push("");
-		lines.push(`- **State:** ${marker}`);
-		if (state.issue.status) lines.push(`- **Status:** ${state.issue.status}`);
-		if (state.issue.assignee) lines.push(`- **Assignee:** ${state.issue.assignee}`);
-		if (fetched) lines.push(`- **Fetched:** ${fetched}`);
-		if (state.issue.url) lines.push(`- **URL:** ${markdownLink(state.issue.url, state.issue.url)}`);
+		const createdAt = state.issue.createdAt
+			? "Updated " + formatRelativeTime(Date.parse(state.issue.createdAt), now)
+			: undefined;
+		lines.push(`# [${state.issue.key}: ${state.issue.title}](${state.issue.url})`);
 
-		const description = compactText(state.issue.description, 260);
+		lines.push("");
+
+		const parts = [
+			state.issue.status && `*${state.issue.status}*`,
+			state.issue.assignee && `*${state.issue.assignee}*`,
+			createdAt && `*${createdAt}*`,
+		].filter((part): part is string => Boolean(part));
+
+		if (parts.length) {
+			lines.push(parts.join(" | "));
+		}
+
+		const description = state.issue.description;
 		if (description) {
 			lines.push("");
 			lines.push(description);
-		}
-
-		if (state.issue.labels.length) {
-			lines.push("");
-			lines.push(`**Labels:** ${state.issue.labels.slice(0, 8).map((label) => `\`${label}\``).join(" ")}`);
 		}
 
 		if (state.issue.pullRequests.length) {
@@ -124,7 +127,7 @@ export class FocusedIssueWidget implements Component {
 		private readonly getState: () => FocusedIssueState,
 		private readonly theme: Theme,
 		private readonly now: () => number = Date.now,
-	) {}
+	) { }
 
 	render(width: number): string[] {
 		return renderFocusedIssueWidgetLines(
