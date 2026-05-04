@@ -144,15 +144,15 @@ function collectUsage(ctx: ExtensionContext): UsageTotals {
   return totals;
 }
 
-/** Return true when the active model is provided by OpenAI. */
-function isOpenAIModel(model: { id?: string; provider?: string } | undefined): boolean {
+/** Return true when the active model uses ChatGPT Codex subscription auth. */
+function isOpenAICodexModel(model: { id?: string; provider?: string } | undefined): boolean {
   if (!model) return false;
   const providerValue =
     model.provider ??
     (model.id && model.id.includes("/") ? model.id.slice(0, model.id.indexOf("/")) : undefined);
   if (!providerValue) return false;
   const provider = providerValue.toLowerCase();
-  return provider.startsWith("openai");
+  return provider === "openai-codex" || /^openai-codex-\d+$/.test(provider);
 }
 
 /** Build a single footer line. */
@@ -179,7 +179,7 @@ function buildLine(
   const gitDirty = isGitDirty(ctx.cwd);
   const gitDiff = gitDirty ? collectGitDiffStatsCached(ctx.cwd) : null;
 
-  const showQuotaUsage = isOpenAIModel(ctx.model as { id?: string; provider?: string } | undefined);
+  const showQuotaUsage = isOpenAICodexModel(ctx.model as { id?: string; provider?: string } | undefined);
   quotaTracker.setEnabled(showQuotaUsage);
 
   // Build left segments
@@ -262,7 +262,7 @@ function activateFooter(
   icons: IconSet,
 ): void {
   let invalidateRef: (() => void) | undefined;
-  const quotaTracker = createCodexQuotaTracker(() => {
+  const quotaTracker = createCodexQuotaTracker(ctx, () => {
     invalidateRef?.();
   });
 

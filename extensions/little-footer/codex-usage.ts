@@ -1,9 +1,8 @@
 /**
- * Codex CLI RPC quota tracker.
+ * ChatGPT Codex usage quota tracker.
  */
 
-import { createInterface } from "node:readline";
-import { spawn } from "node:child_process";
+import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 export interface QuotaWindowSnapshot {
   usedPercent: number;
@@ -24,160 +23,122 @@ export interface QuotaTracker {
   dispose: () => void;
 }
 
-interface GetAccountRateLimitsResponse {
-  rateLimits: {
-    limitId: string | null;
-    limitName: string | null;
-    primary: QuotaWindowSnapshot | null;
-    secondary: QuotaWindowSnapshot | null;
+interface ChatGptUsageWindow {
+  used_percent?: unknown;
+  limit_window_seconds?: unknown;
+  reset_at?: unknown;
+}
+
+interface ChatGptUsageResponse {
+  rate_limit?: {
+    primary_window?: ChatGptUsageWindow;
+    secondary_window?: ChatGptUsageWindow;
   };
-  rateLimitsByLimitId: Record<string, {
-    limitId: string | null;
-    limitName: string | null;
-    primary: QuotaWindowSnapshot | null;
-    secondary: QuotaWindowSnapshot | null;
-  } | undefined> | null;
 }
 
-interface JsonRpcError {
-  code: number;
-  message: string;
-}
-
-interface JsonRpcResponse<T> {
-  id?: string | number;
-  result?: T;
-  error?: JsonRpcError;
-  method?: string;
-  params?: unknown;
-}
-
-const CODEX_RPC_ARGS = ["-s", "read-only", "-a", "untrusted", "app-server"] as const;
-const CODEX_CLIENT_INFO = {
-  name: "little-footer",
-  title: "Pi footer",
-  version: "0.1.0",
-};
+const CHATGPT_BASE_URL = (process.env.CHATGPT_BASE_URL || "https://chatgpt.com/backend-api").replace(/\/+$/, "");
+const OPENAI_AUTH_CLAIM = "https://api.openai.com/auth";
 const REFRESH_INTERVAL_MS = 60_000;
-const REQUEST_TIMEOUT_MS = 5_000;
+const REQUEST_TIMEOUT_MS = 15_000;
 
-function isQuotaWindowSnapshot(value: unknown): value is QuotaWindowSnapshot {
-  if (!value || typeof value !== "object") return false;
-  const window = value as QuotaWindowSnapshot;
-  return typeof window.usedPercent === "number";
+function decodeJwtPayload(token: string): Record<string, unknown> {
+  const parts = token.split(".");
+  if (parts.length < 2) return {};
+  try {
+    const decoded = Buffer.from(parts[1], "base64url").toString("utf8");
+    const payload = JSON.parse(decoded) as unknown;
+    return payload && typeof payload === "object" && !Array.isArray(payload)
+      ? payload as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
 }
 
-function extractQuotaSnapshot(payload: GetAccountRateLimitsResponse): QuotaSnapshot | null {
-  const preferred = payload.rateLimitsByLimitId?.codex ?? payload.rateLimits;
-  if (!preferred) return null;
+function extractChatGptAccountId(token: string): string | undefined {
+  const payload = decodeJwtPayload(token);
+  const auth = payload[OPENAI_AUTH_CLAIM];
+  if (!auth || typeof auth !== "object" || Array.isArray(auth)) return undefined;
+  const accountId = (auth as Record<string, unknown>).chatgpt_account_id;
+  return typeof accountId === "string" && accountId.length > 0 ? accountId : undefined;
+}
+
+function normalizeWindow(window: ChatGptUsageWindow | undefined): QuotaWindowSnapshot | null {
+  if (!window || typeof window !== "object") return null;
+  if (typeof window.used_percent !== "number") return null;
+
+  const durationSeconds = typeof window.limit_window_seconds === "number"
+    ? window.limit_window_seconds
+    : null;
+  const resetSeconds = typeof window.reset_at === "number" ? window.reset_at : null;
 
   return {
-    limitId: preferred.limitId ?? null,
-    limitName: preferred.limitName ?? null,
-    primary: isQuotaWindowSnapshot(preferred.primary) ? preferred.primary : null,
-    secondary: isQuotaWindowSnapshot(preferred.secondary) ? preferred.secondary : null,
+    usedPercent: window.used_percent,
+    windowDurationMins: durationSeconds === null ? null : Math.round(durationSeconds / 60),
+    resetsAt: resetSeconds === null ? null : resetSeconds * 1000,
   };
 }
 
-function parseJsonRpcResponse<T>(line: string): JsonRpcResponse<T> | null {
+function extractQuotaSnapshot(payload: ChatGptUsageResponse): QuotaSnapshot | null {
+  const rateLimit = payload.rate_limit;
+  if (!rateLimit || typeof rateLimit !== "object") return null;
+
+  const primary = normalizeWindow(rateLimit.primary_window);
+  const secondary = normalizeWindow(rateLimit.secondary_window);
+  if (!primary && !secondary) return null;
+
+  return {
+    limitId: "codex",
+    limitName: "OpenAI",
+    primary,
+    secondary,
+  };
+}
+
+function timeoutSignal(timeoutMs: number): { signal: AbortSignal; cancel: () => void } {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    cancel: () => clearTimeout(timeout),
+  };
+}
+
+async function readCodexQuotaSnapshot(ctx: ExtensionContext): Promise<QuotaSnapshot | null> {
+  const model = ctx.model;
+  if (!model) return null;
+
+  const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+  if (!auth.ok || !auth.apiKey) {
+    return null;
+  }
+
+  const headers = new Headers(auth.headers);
+  headers.set("Authorization", `Bearer ${auth.apiKey}`);
+  headers.set("Accept", "application/json");
+  headers.set("User-Agent", "little-footer");
+
+  const accountId = extractChatGptAccountId(auth.apiKey);
+  if (accountId) {
+    headers.set("chatgpt-account-id", accountId);
+  }
+
+  const timeout = timeoutSignal(REQUEST_TIMEOUT_MS);
   try {
-    const value = JSON.parse(line) as JsonRpcResponse<T>;
-    if (!value || typeof value !== "object") return null;
-    return value;
+    const response = await fetch(`${CHATGPT_BASE_URL}/wham/usage`, {
+      headers,
+      signal: timeout.signal,
+    });
+    if (!response.ok) return null;
+    return extractQuotaSnapshot(await response.json() as ChatGptUsageResponse);
   } catch {
     return null;
+  } finally {
+    timeout.cancel();
   }
 }
 
-function createCodexRpcClient(onLine: (line: string) => void): {
-  write: (message: unknown) => void;
-  close: () => void;
-} | null {
-  const binary = process.env.CODEX_BIN || "codex";
-  const child = spawn(binary, [...CODEX_RPC_ARGS], {
-    stdio: ["pipe", "pipe", "pipe"],
-    windowsHide: true,
-  });
-
-  if (!child.stdin || !child.stdout) {
-    child.kill();
-    return null;
-  }
-
-  child.on("error", () => {
-    child.kill();
-  });
-
-  const stdout = createInterface({ input: child.stdout });
-  stdout.on("line", onLine);
-
-  const close = () => {
-    stdout.close();
-    child.kill();
-  };
-
-  return {
-    write(message: unknown) {
-      child.stdin.write(`${JSON.stringify(message)}\n`);
-    },
-    close,
-  };
-}
-
-async function readCodexQuotaSnapshot(): Promise<QuotaSnapshot | null> {
-  return await new Promise((resolve) => {
-    let settled = false;
-    let timeout: ReturnType<typeof setTimeout> | null = null;
-    let rpc: ReturnType<typeof createCodexRpcClient> | null = null;
-
-    const finish = (snapshot: QuotaSnapshot | null) => {
-      if (settled) return;
-      settled = true;
-      if (timeout) clearTimeout(timeout);
-      rpc?.close();
-      resolve(snapshot);
-    };
-
-    const handleLine = (line: string) => {
-      const message = parseJsonRpcResponse<unknown>(line);
-      if (!message) return;
-
-      if (message.id === 1 && message.result) {
-        rpc?.write({ method: "initialized" });
-        rpc?.write({ method: "account/rateLimits/read", id: 2 });
-        return;
-      }
-
-      if (message.id === 2) {
-        if (message.error) {
-          finish(null);
-          return;
-        }
-        const snapshot = extractQuotaSnapshot(message.result as GetAccountRateLimitsResponse);
-        finish(snapshot);
-      }
-    };
-
-    rpc = createCodexRpcClient(handleLine);
-    if (!rpc) {
-      finish(null);
-      return;
-    }
-
-    timeout = setTimeout(() => finish(null), REQUEST_TIMEOUT_MS);
-
-    rpc.write({
-      method: "initialize",
-      id: 1,
-      params: {
-        clientInfo: CODEX_CLIENT_INFO,
-        capabilities: { experimentalApi: false },
-      },
-    });
-  });
-}
-
-export function createCodexQuotaTracker(onUpdate: () => void): QuotaTracker {
+export function createCodexQuotaTracker(ctx: ExtensionContext, onUpdate: () => void): QuotaTracker {
   let enabled = false;
   let snapshot: QuotaSnapshot | null = null;
   let lastRefreshAt = 0;
@@ -189,7 +150,7 @@ export function createCodexQuotaTracker(onUpdate: () => void): QuotaTracker {
     if (disposed || refreshInFlight) return;
 
     refreshInFlight = (async () => {
-      const next = await readCodexQuotaSnapshot();
+      const next = await readCodexQuotaSnapshot(ctx);
       const previous = snapshot ? JSON.stringify(snapshot) : null;
       const current = next ? JSON.stringify(next) : null;
       snapshot = next;

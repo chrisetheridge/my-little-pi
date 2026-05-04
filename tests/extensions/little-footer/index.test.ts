@@ -39,7 +39,7 @@ interface FakeCtx {
     setFooter: ReturnType<typeof vi.fn>;
   };
   cwd: string;
-  model: { id: string } | undefined;
+  model: { id: string; provider?: string } | undefined;
   sessionManager: {
     getBranch: () => unknown[];
   };
@@ -250,7 +250,7 @@ describe("little-footer extension", () => {
     });
     const ctx = createCtx({
       cwd: "/Users/me/my-little-pi/",
-      model: { id: "openai/gpt-5.2" },
+      model: { id: "gpt-5.2", provider: "openai-codex" },
       sessionManager: {
         getBranch: () => [
           {
@@ -286,7 +286,7 @@ describe("little-footer extension", () => {
     const component = factory({}, theme, footerData);
     const [line] = component.render(200);
 
-    expect(line).toContain("OpenAI: GPT 5.2");
+    expect(line).toContain("GPT 5.2");
     expect(line).toContain("my-little-pi");
     expect(line).toContain("main");
     expect(line).toContain("1.2k");
