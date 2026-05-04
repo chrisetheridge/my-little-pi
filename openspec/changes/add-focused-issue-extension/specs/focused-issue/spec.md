@@ -24,7 +24,7 @@ The extension SHALL provide commands that allow the user to set, clear, refresh,
 - **THEN** the extension displays the current normalized issue metadata or the current loading/error state
 
 ### Requirement: Sticky focused issue UI
-The extension SHALL render a sticky below-editor terminal widget whenever a focused issue is active and interactive UI is available.
+The extension SHALL render a sticky above-editor terminal widget whenever a focused issue is active and interactive UI is available.
 
 #### Scenario: Issue metadata is loading
 - **WHEN** a focused issue has been set and metadata has not finished loading

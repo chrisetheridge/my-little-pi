@@ -11,7 +11,7 @@ The new extension needs to bridge external issue trackers and the agent loop. Us
 - Provide a focused issue command flow that works from a URL or provider-specific identifier.
 - Keep issue fetching asynchronous and cancelable so remote calls do not block agent turns or worker threads.
 - Normalize issue metadata through a provider interface that can support Linear first and GitHub issues later.
-- Render focused issue state as a compact below-editor widget with loading, success, stale, and error states.
+- Render focused issue state as a compact above-editor widget with loading, success, stale, and error states.
 - Inject focused issue context once after the focus changes, then avoid repeating large context on every turn.
 - Persist or reconstruct enough focus state across reloads and session changes to keep the UI useful.
 
@@ -40,9 +40,9 @@ The new extension needs to bridge external issue trackers and the agent loop. Us
 
    Setting focus updates local state immediately to `loading` and starts an asynchronous refresh using an `AbortController`. `before_agent_start` must only inject already available metadata or a compact pending note; it must not wait for Linear. `session_shutdown` cancels in-flight refreshes.
 
-5. Render with `ctx.ui.setWidget("focused-issue", ..., { placement: "belowEditor" })`.
+5. Render with `ctx.ui.setWidget("focused-issue", ..., { placement: "aboveEditor" })`.
 
-   A below-editor widget matches the requested sticky terminal placement and avoids modal behavior. The widget will render a concise card-like text component with truncation and wrapping for terminal widths, including state markers for loading, stale data, and errors.
+   An above-editor widget keeps the issue visible near the input without crowding Pi's footer/status line. The widget will render markdown inside a bordered TUI panel with truncation and wrapping for terminal widths, including state markers for loading, stale data, and errors.
 
 6. Inject context through `before_agent_start` once per focus version.
 
@@ -56,7 +56,7 @@ The new extension needs to bridge external issue trackers and the agent loop. Us
 
 - Linear credentials may be unavailable or configured differently per environment -> show a clear error in the widget and keep the focused reference so the user can retry after configuring access.
 - Linear API shape or CLI output may vary -> isolate all provider parsing inside the Linear provider and test normalization with representative fixtures outside `extensions/`.
-- Below-editor widget space is limited -> render a compact summary by default and use `/focus-issue show` for the full normalized metadata.
+- Above-editor widget space is limited -> render a compact summary by default and use `/focus-issue show` for the full normalized metadata.
 - Prompt injection could consume too much context -> summarize descriptions, cap associated PRs and labels, and inject only once per focused issue version.
 - Async fetch races can display stale data -> tag each request with the active focus token and ignore results for superseded tokens.
 - Session reloads may lose purely in-memory focus state -> define replayable state and restore from session entries or extension-local state before treating this as complete.
