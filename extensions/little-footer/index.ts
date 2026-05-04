@@ -217,7 +217,7 @@ function buildLine(
   // Extension statuses from footerData
   try {
     const statuses = footerData.getExtensionStatuses();
-    for (const [key, value] of statuses) {
+    for (const [, value] of statuses) {
       if (value && value.trim()) {
         rightSegments.push(renderExtensionStatus(theme, value));
       }
@@ -290,10 +290,8 @@ export default function littleFooterExtension(pi: ExtensionAPI): void {
   const useNerd = detectNerdFonts();
   const icons = iconsFor(useNerd);
   let enabled = true;
-  let activeCtx: ExtensionContext | undefined;
 
   pi.on("session_start", (_event, ctx) => {
-    activeCtx = ctx;
     if (enabled) {
       activateFooter(ctx, pi, icons);
     }
@@ -317,7 +315,6 @@ export default function littleFooterExtension(pi: ExtensionAPI): void {
         ctx.ui.notify(`little-footer: ${enabled ? "on" : "off"} (${iconMode})`, "info");
       } else if (sub === "on") {
         enabled = true;
-        activeCtx = ctx;
         activateFooter(ctx, pi, icons);
         ctx.ui.notify("little-footer: on", "info");
       } else if (sub === "off") {

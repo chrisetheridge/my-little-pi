@@ -12,8 +12,9 @@ function patchLoader(): void {
 
 	proto.updateDisplay = function patchedUpdateDisplay() {
 		const frame = SPINNER_FRAMES[this.currentFrame % SPINNER_FRAMES.length];
+		const ansiRe = new RegExp(`${"\u001b"}\\[[0-9;]*m`);
 		const message =
-			typeof this.message === "string" && /\x1b\[[0-9;]*m/.test(this.message)
+			typeof this.message === "string" && ansiRe.test(this.message)
 				? this.message
 				: this.messageColorFn(this.message);
 		const nextText = `${this.spinnerColorFn(frame)} ${message}`;

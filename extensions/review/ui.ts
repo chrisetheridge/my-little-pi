@@ -159,7 +159,6 @@ export class FindingsDialog {
 				this.done({ submitted: false, state: this.state });
 				return;
 			}
-			const openCount = this.state.findings.length;
 			this.statusMessage = "Confirming close with findings still open...";
 			this.invalidate();
 			this.confirmClose(this.state)

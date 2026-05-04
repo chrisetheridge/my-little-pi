@@ -62,12 +62,20 @@
     }
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@mariozechner/pi-agent-core": "latest",
     "@mariozechner/pi-coding-agent": "latest",
     "@mariozechner/pi-tui": "latest",
-    "typescript": "^5.9.3",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
+    "jiti": "^2.6.1",
     "typebox": "latest",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.59.2",
     "vitest": "^4.1.5"
   },
-  "packageManager": "pnpm@10.11.0+sha1.4048eeefd564ff1ab248fac3e2854d38245fe2f1"
+  "packageManager": "pnpm@10.11.0+sha1.4048eeefd564ff1ab248fac3e2854d38245fe2f1",
+  "dependencies": {
+    "pi-extension-websearch": "file:../pi-extension-websearch"
+  }
 }

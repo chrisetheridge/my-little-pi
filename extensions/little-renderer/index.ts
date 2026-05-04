@@ -2,8 +2,9 @@ import { createBashTool, createEditTool, createFindTool, createGrepTool, createL
 import type { ExtensionAPI, ExtensionContext, Theme, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 import { Markdown, Text } from "@mariozechner/pi-tui";
 
-const ANSI_RE = /\x1b\[[0-9;]*m/g;
-const ANSI_PRESENT_RE = /\x1b\[[0-9;]*m/;
+const ESC = "\u001b";
+const ANSI_RE = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
+const ANSI_PRESENT_RE = new RegExp(`${ESC}\\[[0-9;]*m`);
 const ASSISTANT_PATCH_FLAG = Symbol.for("little-renderer:assistant-message-patched");
 
 const BLINK_INTERVAL_MS = 500;
@@ -72,7 +73,8 @@ function sanitizeRenderedTextBlockLines(lines: string[]): string[] {
 			return line;
 		}
 		if (inFence) return line;
-		return line.replace(/^((?:\x1b\[[0-9;]*m|[ \t])*)#{3,6}[ \t]*((?:\x1b\[[0-9;]*m)*)/, "$1$2").replace(/###/g, "");
+		const headingPrefixRe = new RegExp(`^((?:${ESC}\\[[0-9;]*m|[ \\t])*)#{3,6}[ \\t]*((?:${ESC}\\[[0-9;]*m)*)`);
+		return line.replace(headingPrefixRe, "$1$2").replace(/###/g, "");
 	});
 }
 
@@ -126,8 +128,8 @@ class ThinkingParagraph {
 		_markdownTheme: ConstructorParameters<typeof Markdown>[3],
 		_defaultTextStyle?: ConstructorParameters<typeof Markdown>[4],
 	) {
-		const dimFg = "\x1b[38;2;140;140;140m";
-		const italic = "\x1b[3m";
+		const dimFg = "\u001b[38;2;140;140;140m";
+		const italic = "\u001b[3m";
 		const wrap = (s: string) => `${dimFg}${italic}${s}`;
 		const plainTheme: ConstructorParameters<typeof Markdown>[3] = {
 			heading: wrap,
@@ -221,12 +223,6 @@ function patchAssistantMessages(): void {
 
 function getBlinkKey(ctx: any): any {
 	return ctx?.state ?? ctx;
-}
-
-function updateBlinkState(): void {
-	for (const entry of blinkEntries.values()) {
-		entry.active = blinkEntries.size > 0;
-	}
 }
 
 function scheduleBlinkTimer(): void {
@@ -400,6 +396,31 @@ function renderBashResult(result: any, options: ToolRenderResultOptions, theme: 
 	return new Text(`${withBranch(summary)}\n${renderPreviewLines(text, theme)}`, 0, 0);
 }
 
+function buildSimpleFileSummary(
+	name: string,
+	args: { path?: string; pattern?: string; glob?: string; command?: string; content?: string },
+	theme: Theme,
+	ctx: any,
+): string {
+	if (name === "grep" && args.pattern) {
+		let summary = JSON.stringify(args.pattern);
+		if (args.path) summary += theme.fg("muted", ` in ${shortPath(ctx.cwd, args.path)}`);
+		if (args.glob) summary += theme.fg("dim", ` --glob ${args.glob}`);
+		return summary;
+	}
+	if (name === "find" && args.path) return shortPath(ctx.cwd, args.path);
+	if (name === "ls" && args.path) return shortPath(ctx.cwd, args.path);
+	if (name === "write" && args.path) {
+		let summary = shortPath(ctx.cwd, args.path);
+		if (typeof args.content === "string") {
+			summary += theme.fg("dim", ` (${countNonEmptyLines(args.content)} lines)`);
+		}
+		return summary;
+	}
+	if (name === "edit" && args.path) return shortPath(ctx.cwd, args.path);
+	return args.path ?? args.command ?? "";
+}
+
 function renderSimpleFileCall(
 	name: string,
 	args: { path?: string; pattern?: string; glob?: string; command?: string; content?: string },
@@ -407,25 +428,7 @@ function renderSimpleFileCall(
 	ctx: any,
 ): Text {
 	syncToolCallStatus(ctx);
-	let summary = "";
-	if (name === "grep" && args.pattern) {
-		summary = JSON.stringify(args.pattern);
-		if (args.path) summary += theme.fg("muted", ` in ${shortPath(ctx.cwd, args.path)}`);
-		if (args.glob) summary += theme.fg("dim", ` --glob ${args.glob}`);
-	} else if (name === "find" && args.path) {
-		summary = shortPath(ctx.cwd, args.path);
-	} else if (name === "ls" && args.path) {
-		summary = shortPath(ctx.cwd, args.path);
-	} else if (name === "write" && args.path) {
-		summary = shortPath(ctx.cwd, args.path);
-		if (typeof args.content === "string") {
-			summary += theme.fg("dim", ` (${countNonEmptyLines(args.content)} lines)`);
-		}
-	} else if (name === "edit" && args.path) {
-		summary = shortPath(ctx.cwd, args.path);
-	} else {
-		summary = args.path ?? args.command ?? "";
-	}
+	const summary = buildSimpleFileSummary(name, args, theme, ctx);
 	return new Text(createCallHeader(theme, `${name[0].toUpperCase()}${name.slice(1)}`, summary, ctx), 0, 0);
 }
 
