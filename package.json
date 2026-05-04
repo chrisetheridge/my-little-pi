@@ -29,7 +29,8 @@
       "./extensions/little-footer/index.ts",
       "./extensions/little-renderer/index.ts",
       "./extensions/review/index.ts",
-      "./extensions/little-spinner/index.ts"
+      "./extensions/little-spinner/index.ts",
+      "./extensions/focused-issue/index.ts"
     ],
     "skills": [
       "./skills"
