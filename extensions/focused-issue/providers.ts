@@ -10,6 +10,16 @@ export function findProvider(reference: string, providers: IssueProvider[]): Iss
 	return providers.find((provider) => provider.canHandle(normalized));
 }
 
+export function extractIssueReference(text: string, providers: IssueProvider[]): string | null {
+	for (const provider of providers) {
+		const extracted = provider.extractReference?.(text);
+		const normalized = extracted ? normalizeReference(extracted) : "";
+		if (normalized && provider.canHandle(normalized)) return normalized;
+	}
+	const normalized = normalizeReference(text);
+	return findProvider(normalized, providers) ? normalized : null;
+}
+
 export function unsupportedReferenceError(reference: string): IssueProviderError {
 	return {
 		code: "unsupported",

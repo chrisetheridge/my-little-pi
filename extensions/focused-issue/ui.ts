@@ -5,13 +5,6 @@ import type { FocusedIssueState } from "./types.ts";
 
 const MAX_PANEL_CONTENT_LINES = 15;
 
-function compactText(value: string | undefined, maxLength: number): string | undefined {
-	if (!value) return undefined;
-	const normalized = value.trim().replace(/\s+/g, " ");
-	if (normalized.length <= maxLength) return normalized;
-	return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
-}
-
 function formatRelativeTime(timestamp: number | null, now: number): string | undefined {
 	if (!timestamp) return undefined;
 	const seconds = Math.max(0, Math.floor((now - timestamp) / 1000));

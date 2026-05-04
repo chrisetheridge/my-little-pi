@@ -1,5 +1,9 @@
-import type { BeforeAgentStartEventResult, ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
+import { getAgentDir, type BeforeAgentStartEventResult, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+
+import { extractIssueReference } from "./providers.ts";
 import { createLinearProvider } from "./providers/linear.ts";
 import {
 	buildFocusedIssueMessage,
@@ -19,6 +23,20 @@ import {
 import { makeFocusedIssueWidgetFactory, renderFocusedIssuePlainLines } from "./ui.ts";
 
 const COMMANDS = ["clear", "refresh", "show", "inject"];
+const GLOBAL_CONFIG_PATH = join(getAgentDir(), "extensions", "focused-issue.json");
+const PROJECT_CONFIG_FILE = join(".pi", "extensions", "focused-issue.json");
+
+interface FocusedIssueConfig {
+	autoFocusIssueMentions: boolean;
+}
+
+interface FocusedIssueFileConfig {
+	autoFocusIssueMentions?: boolean;
+}
+
+const DEFAULT_CONFIG: FocusedIssueConfig = {
+	autoFocusIssueMentions: true,
+};
 
 function getSessionEntries(ctx: ExtensionContext): unknown[] {
 	const manager = ctx.sessionManager as {
@@ -57,6 +75,26 @@ function notifyError(ctx: ExtensionContext | undefined, state: FocusedIssueState
 
 function persist(pi: ExtensionAPI, snapshot: FocusedIssueSnapshot): void {
 	pi.appendEntry(FOCUSED_ISSUE_STATE_TYPE, snapshot);
+}
+
+function readJsonFile<T>(path: string): T | undefined {
+	if (!existsSync(path)) return undefined;
+	try {
+		return JSON.parse(readFileSync(path, "utf-8")) as T;
+	} catch (error) {
+		console.error(`Failed to read focused issue config from ${path}: ${error}`);
+		return undefined;
+	}
+}
+
+function loadFocusedIssueConfig(cwd: string): FocusedIssueConfig {
+	const globalConfig = readJsonFile<FocusedIssueFileConfig>(GLOBAL_CONFIG_PATH) ?? {};
+	const projectConfig = readJsonFile<FocusedIssueFileConfig>(join(cwd, PROJECT_CONFIG_FILE)) ?? {};
+	return {
+		...DEFAULT_CONFIG,
+		...globalConfig,
+		...projectConfig,
+	};
 }
 
 function buildBeforeAgentStartResult(controller: FocusedIssueController): BeforeAgentStartEventResult | undefined {
@@ -149,6 +187,24 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 
 		pi.on("session_shutdown", () => {
 			controller.cancel();
+		});
+
+		pi.on("input", (event, ctx) => {
+			const config = loadFocusedIssueConfig(ctx.cwd);
+			if (event.source === "extension" || !config.autoFocusIssueMentions) {
+				return { action: "continue" };
+			}
+			const reference = extractIssueReference(event.text, providers);
+			if (!reference || reference === controller.getState().reference) {
+				return { action: "continue" };
+			}
+			lastCtx = ctx;
+			controller.setFocus(reference);
+			updateWidget(ctx, controller);
+			if (ctx.hasUI && controller.getState().status !== "error") {
+				ctx.ui.notify(`focused issue detected: ${reference}`, "info");
+			}
+			return { action: "continue" };
 		});
 
 		pi.on("before_agent_start", () => buildBeforeAgentStartResult(controller));

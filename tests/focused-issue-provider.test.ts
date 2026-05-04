@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createLinearProvider, normalizeLinearIssue, parseLinearReference } from "../extensions/focused-issue/linear.ts";
-import { findProvider, unsupportedReferenceError } from "../extensions/focused-issue/providers.ts";
+import { createLinearProvider, normalizeLinearIssue, parseLinearReference } from "../extensions/focused-issue/providers/linear.ts";
+import { extractIssueReference, findProvider, unsupportedReferenceError } from "../extensions/focused-issue/providers.ts";
 import type { IssueProvider } from "../extensions/focused-issue/types.ts";
 
 describe("focused issue providers", () => {
@@ -23,6 +23,13 @@ describe("focused issue providers", () => {
 			message: 'No issue provider supports "not an issue".',
 			retryable: false,
 		});
+	});
+
+	it("extracts supported issue references from free-form message text", () => {
+		const providers = [createLinearProvider({ apiKey: "test" })];
+
+		expect(extractIssueReference("please look at ENG-123 before changing this", providers)).toBe("ENG-123");
+		expect(extractIssueReference("no issue here", providers)).toBeNull();
 	});
 
 	it("parses Linear issue keys with arbitrary team prefixes", () => {

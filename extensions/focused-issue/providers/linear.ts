@@ -149,6 +149,9 @@ export function createLinearProvider(options: LinearProviderOptions = {}): Issue
 		canHandle(reference) {
 			return parseLinearReference(reference) !== null;
 		},
+		extractReference(text) {
+			return parseLinearReference(text)?.display ?? null;
+		},
 		async fetchIssue(reference, signal): Promise<IssueProviderResult> {
 			const parsed = parseLinearReference(reference);
 			if (!parsed) {

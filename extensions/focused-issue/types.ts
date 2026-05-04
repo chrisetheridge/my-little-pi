@@ -42,6 +42,7 @@ export interface IssueProvider {
 	id: IssueProviderId;
 	label: string;
 	canHandle(reference: string): boolean;
+	extractReference?: (text: string) => string | null;
 	fetchIssue(reference: string, signal: AbortSignal): Promise<IssueProviderResult>;
 }
 

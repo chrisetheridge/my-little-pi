@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { createFocusedIssueExtension } from "../extensions/focused-issue/index.ts";
@@ -6,6 +10,7 @@ import type { FocusedIssue, IssueProvider, IssueProviderResult } from "../extens
 type Handler = (event: unknown, ctx?: FakeCtx) => unknown;
 
 interface FakeCtx {
+	cwd: string;
 	hasUI: boolean;
 	ui: {
 		notify: ReturnType<typeof vi.fn>;
@@ -35,8 +40,9 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	return { promise, resolve };
 }
 
-function createCtx(entries: unknown[] = [], hasUI = true): FakeCtx {
+function createCtx(entries: unknown[] = [], hasUI = true, cwd = process.cwd()): FakeCtx {
 	return {
+		cwd,
 		hasUI,
 		ui: {
 			notify: vi.fn(),
@@ -46,6 +52,14 @@ function createCtx(entries: unknown[] = [], hasUI = true): FakeCtx {
 			getBranch: () => entries,
 		},
 	};
+}
+
+function createProjectWithFocusedIssueConfig(config: Record<string, unknown>): string {
+	const cwd = mkdtempSync(join(tmpdir(), "focused-issue-"));
+	const configDir = join(cwd, ".pi", "extensions");
+	mkdirSync(configDir, { recursive: true });
+	writeFileSync(join(configDir, "focused-issue.json"), `${JSON.stringify(config)}\n`);
+	return cwd;
 }
 
 function loadExtension(provider: IssueProvider): {
@@ -124,7 +138,7 @@ describe("focused issue extension", () => {
 			fetchIssue: vi.fn(() => Promise.resolve({ ok: true, issue: issue() })),
 		};
 		const { commands } = loadExtension(provider);
-		const ctx = createCtx();
+		const ctx = createCtx([], true, createProjectWithFocusedIssueConfig({ autoFocusIssueMentions: true }));
 		const command = commands.get("focus-issue");
 
 		await command?.handler("ENG-123", ctx);
@@ -204,5 +218,42 @@ describe("focused issue extension", () => {
 
 		expect(ctx.ui.setWidget).not.toHaveBeenCalled();
 		expect(provider.fetchIssue).toHaveBeenCalledTimes(1);
+	});
+
+	it("automatically focuses an issue mentioned in user input", async () => {
+		const pending = deferred<IssueProviderResult>();
+		const provider: IssueProvider = {
+			id: "linear",
+			label: "Linear",
+			canHandle: (reference) => reference === "ENG-123",
+			extractReference: (text) => (text.includes("ENG-123") ? "ENG-123" : null),
+			fetchIssue: vi.fn(() => pending.promise),
+		};
+		const { handlers } = loadExtension(provider);
+		const ctx = createCtx();
+
+		const result = handlers.get("input")?.({ type: "input", text: "please look at ENG-123", source: "interactive" }, ctx);
+
+		expect(result).toEqual({ action: "continue" });
+		expect(provider.fetchIssue).toHaveBeenCalledWith("ENG-123", expect.any(AbortSignal));
+		expect(ctx.ui.setWidget).toHaveBeenCalledWith("focused-issue", expect.any(Function), { placement: "aboveEditor" });
+	});
+
+	it("does not auto-focus issue mentions when extension config disables it", async () => {
+		const provider: IssueProvider = {
+			id: "linear",
+			label: "Linear",
+			canHandle: (reference) => reference === "ENG-123",
+			extractReference: (text) => (text.includes("ENG-123") ? "ENG-123" : null),
+			fetchIssue: vi.fn(() => Promise.resolve({ ok: true, issue: issue() })),
+		};
+		const { handlers } = loadExtension(provider);
+		const ctx = createCtx([], true, createProjectWithFocusedIssueConfig({ autoFocusIssueMentions: false }));
+
+		const result = handlers.get("input")?.({ type: "input", text: "please look at ENG-123", source: "interactive" }, ctx);
+
+		expect(result).toEqual({ action: "continue" });
+		expect(provider.fetchIssue).not.toHaveBeenCalled();
+		expect(ctx.ui.setWidget).not.toHaveBeenCalled();
 	});
 });
