@@ -23,6 +23,8 @@ import {
 import { makeFocusedIssueWidgetFactory, renderFocusedIssuePlainLines } from "./ui.ts";
 
 const COMMANDS = ["clear", "refresh", "show", "inject"];
+const SCROLL_UP_SHORTCUT = "ctrl+shift+up";
+const SCROLL_DOWN_SHORTCUT = "ctrl+shift+down";
 const GLOBAL_CONFIG_PATH = join(getAgentDir(), "extensions", "focused-issue.json");
 const PROJECT_CONFIG_FILE = join(".pi", "extensions", "focused-issue.json");
 
@@ -56,16 +58,29 @@ function summarizeState(state: FocusedIssueState): string {
 	return `Focused issue ${state.reference ?? ""}: ${state.status}`;
 }
 
-function updateWidget(ctx: ExtensionContext | undefined, controller: FocusedIssueController): void {
+interface FocusedIssueScrollState {
+	offset: number;
+}
+
+function updateWidget(ctx: ExtensionContext | undefined, controller: FocusedIssueController, scrollState: FocusedIssueScrollState): void {
 	if (!ctx?.hasUI) return;
 	const state = controller.getState();
 	if (state.status === "idle") {
 		ctx.ui.setWidget(FOCUSED_ISSUE_WIDGET_KEY, undefined, { placement: "aboveEditor" });
 		return;
 	}
-	ctx.ui.setWidget(FOCUSED_ISSUE_WIDGET_KEY, makeFocusedIssueWidgetFactory(() => controller.getState()), {
-		placement: "aboveEditor",
-	});
+	ctx.ui.setWidget(
+		FOCUSED_ISSUE_WIDGET_KEY,
+		makeFocusedIssueWidgetFactory(
+			() => controller.getState(),
+			Date.now,
+			() => scrollState.offset,
+			(offset) => {
+				scrollState.offset = offset;
+			},
+		),
+		{ placement: "aboveEditor" },
+	);
 }
 
 function notifyError(ctx: ExtensionContext | undefined, state: FocusedIssueState): void {
@@ -115,10 +130,20 @@ function buildBeforeAgentStartResult(controller: FocusedIssueController): Before
 export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: ExtensionAPI) => void {
 	return function focusedIssueExtension(pi: ExtensionAPI): void {
 		let lastCtx: ExtensionContext | undefined;
+		const scrollState: FocusedIssueScrollState = { offset: 0 };
+		const resetScroll = (): void => {
+			scrollState.offset = 0;
+		};
+		const scrollWidget = (delta: number, ctx: ExtensionContext): void => {
+			if (controller.getState().status === "idle") return;
+			lastCtx = ctx;
+			scrollState.offset = Math.max(0, scrollState.offset + delta);
+			updateWidget(ctx, controller, scrollState);
+		};
 		const controller = new FocusedIssueController({
 			providers,
 			onChange: (state) => {
-				updateWidget(lastCtx, controller);
+				updateWidget(lastCtx, controller, scrollState);
 				notifyError(lastCtx, state);
 			},
 			onPersist: (snapshot) => persist(pi, snapshot),
@@ -131,9 +156,19 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 				ctx.ui.notify("Usage: /focus-issue <issue-ref|clear|refresh|show|inject>", "warning");
 				return;
 			}
+			resetScroll();
 			controller.setFocus(reference);
-			updateWidget(ctx, controller);
+			updateWidget(ctx, controller, scrollState);
 		};
+
+		pi.registerShortcut(SCROLL_UP_SHORTCUT, {
+			description: "Scroll focused issue up",
+			handler: (ctx) => scrollWidget(-1, ctx),
+		});
+		pi.registerShortcut(SCROLL_DOWN_SHORTCUT, {
+			description: "Scroll focused issue down",
+			handler: (ctx) => scrollWidget(1, ctx),
+		});
 
 		pi.registerCommand("focus-issue", {
 			description: "Set, clear, refresh, or show the focused external issue",
@@ -147,8 +182,9 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 				lastCtx = ctx;
 				const command = args.trim();
 				if (command === "clear") {
+					resetScroll();
 					controller.clear();
-					updateWidget(ctx, controller);
+					updateWidget(ctx, controller, scrollState);
 					ctx.ui.notify("Focused issue cleared", "info");
 					return;
 				}
@@ -158,7 +194,7 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 						return;
 					}
 					controller.refresh({ reinject: command === "inject" });
-					updateWidget(ctx, controller);
+					updateWidget(ctx, controller, scrollState);
 					ctx.ui.notify(command === "inject" ? "Focused issue will be reinjected after refresh" : "Focused issue refresh started", "info");
 					return;
 				}
@@ -172,8 +208,9 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 
 		pi.on("session_start", (_event, ctx) => {
 			lastCtx = ctx;
+			resetScroll();
 			controller.restore(restoreFocusedIssueSnapshot(getSessionEntries(ctx)));
-			updateWidget(ctx, controller);
+			updateWidget(ctx, controller, scrollState);
 		});
 
 		pi.on("session_shutdown", () => {
@@ -190,8 +227,9 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 				return { action: "continue" };
 			}
 			lastCtx = ctx;
+			resetScroll();
 			controller.setFocus(reference);
-			updateWidget(ctx, controller);
+			updateWidget(ctx, controller, scrollState);
 			return { action: "continue" };
 		});
 

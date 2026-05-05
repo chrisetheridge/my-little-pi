@@ -3,7 +3,8 @@ import { Markdown, truncateToWidth, visibleWidth, type Component, type MarkdownT
 
 import type { FocusedIssueState } from "./types.ts";
 
-const MAX_PANEL_CONTENT_LINES = 15;
+const MAX_PANEL_CONTENT_LINES = 14;
+const STATUSLINE_TEXT = "Ctrl+Shift+Up / Ctrl+Shift+Down scroll";
 
 function formatRelativeTime(timestamp: number | null, now: number): string | undefined {
 	if (!timestamp) return undefined;
@@ -98,10 +99,13 @@ export function renderFocusedIssueWidgetLines(
 	now = Date.now(),
 	markdownTheme: MarkdownTheme = getMarkdownTheme(),
 	borderColor: (text: string) => string = (text) => text,
+	scrollOffset = 0,
+	statusColor: (text: string) => string = (text) => text,
+	onScrollOffsetChange?: (scrollOffset: number) => void,
 ): string[] {
 	const markdown = formatFocusedIssueMarkdown(state, now);
 	if (!markdown) return [];
-	return renderBorderedMarkdown(markdown, Math.max(24, width), markdownTheme, borderColor);
+	return renderBorderedMarkdown(markdown, Math.max(24, width), markdownTheme, borderColor, scrollOffset, statusColor, onScrollOffsetChange);
 }
 
 export function renderFocusedIssuePlainLines(state: FocusedIssueState, now = Date.now()): string[] {
@@ -120,6 +124,8 @@ export class FocusedIssueWidget implements Component {
 		private readonly getState: () => FocusedIssueState,
 		private readonly theme: Theme,
 		private readonly now: () => number = Date.now,
+		private readonly getScrollOffset: () => number = () => 0,
+		private readonly setScrollOffset: (scrollOffset: number) => void = () => { },
 	) { }
 
 	render(width: number): string[] {
@@ -129,6 +135,9 @@ export class FocusedIssueWidget implements Component {
 			this.now(),
 			getMarkdownTheme(),
 			(text) => this.theme.fg("borderAccent", text),
+			this.getScrollOffset(),
+			(text) => this.theme.fg("muted", text),
+			this.setScrollOffset,
 		);
 	}
 
@@ -137,8 +146,13 @@ export class FocusedIssueWidget implements Component {
 	}
 }
 
-export function makeFocusedIssueWidgetFactory(getState: () => FocusedIssueState, now: () => number = Date.now) {
-	return (_tui: unknown, theme: Theme): Component => new FocusedIssueWidget(getState, theme, now);
+export function makeFocusedIssueWidgetFactory(
+	getState: () => FocusedIssueState,
+	now: () => number = Date.now,
+	getScrollOffset: () => number = () => 0,
+	setScrollOffset: (scrollOffset: number) => void = () => { },
+) {
+	return (_tui: unknown, theme: Theme): Component => new FocusedIssueWidget(getState, theme, now, getScrollOffset, setScrollOffset);
 }
 
 function padLine(line: string, width: number): string {
@@ -151,16 +165,42 @@ function renderBorderedMarkdown(
 	width: number,
 	markdownTheme: MarkdownTheme,
 	borderColor: (text: string) => string,
+	scrollOffset: number,
+	statusColor: (text: string) => string,
+	onScrollOffsetChange: ((scrollOffset: number) => void) | undefined,
 ): string[] {
 	const innerWidth = Math.max(8, width - 4);
 	const rendered = new Markdown(markdown, 0, 0, markdownTheme).render(innerWidth);
-	const visible = rendered.slice(0, MAX_PANEL_CONTENT_LINES);
-	if (rendered.length > visible.length) {
-		visible.push("…");
+	const { lines: visible, scrollOffset: effectiveScrollOffset } = sliceScrollableLines(rendered, scrollOffset);
+	if (effectiveScrollOffset !== scrollOffset) {
+		onScrollOffsetChange?.(effectiveScrollOffset);
 	}
+	const statusLine = `${borderColor("│")} ${padLine(statusColor(STATUSLINE_TEXT), innerWidth)} ${borderColor("│")}`;
 
 	const top = borderColor(`╭${"─".repeat(Math.max(0, width - 2))}╮`);
 	const bottom = borderColor(`╰${"─".repeat(Math.max(0, width - 2))}╯`);
 	const body = visible.map((line) => `${borderColor("│")} ${padLine(line, innerWidth)} ${borderColor("│")}`);
-	return [top, ...body, bottom];
+	return [top, ...body, statusLine, bottom];
+}
+
+function sliceScrollableLines(rendered: string[], rawScrollOffset: number): { lines: string[]; scrollOffset: number } {
+	const maxBodyLines = MAX_PANEL_CONTENT_LINES + 1;
+	if (rendered.length <= MAX_PANEL_CONTENT_LINES) return { lines: rendered, scrollOffset: 0 };
+
+	const maxOffset = Math.max(0, rendered.length - MAX_PANEL_CONTENT_LINES);
+	const scrollOffset = Math.max(0, Math.min(Math.floor(rawScrollOffset), maxOffset));
+	if (scrollOffset === 0) {
+		return { lines: [...rendered.slice(0, MAX_PANEL_CONTENT_LINES), "↓ …"], scrollOffset };
+	}
+
+	const hasMoreBelow = scrollOffset + MAX_PANEL_CONTENT_LINES < rendered.length;
+	const contentLineCount = maxBodyLines - 1 - (hasMoreBelow ? 1 : 0);
+	return {
+		lines: [
+			"↑ …",
+			...rendered.slice(scrollOffset, scrollOffset + contentLineCount),
+			...(hasMoreBelow ? ["↓ …"] : []),
+		],
+		scrollOffset,
+	};
 }

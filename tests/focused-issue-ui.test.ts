@@ -131,6 +131,20 @@ describe("focused issue sticky UI", () => {
 		expect(lines.join("\n")).toContain("Focused issue: ENG-123");
 	});
 
+	it("renders a bottom statusline with focused issue shortcuts", () => {
+		const lines = renderFocusedIssueWidgetLines(
+			state({ status: "loading", reference: "ENG-123", providerId: "linear" }),
+			58,
+			Date.now(),
+			plainMarkdownTheme,
+		);
+
+		const statusline = lines.at(-2);
+		expect(statusline).toContain("Ctrl+Shift+Up");
+		expect(statusline).toContain("Ctrl+Shift+Down");
+		expect(visibleWidth(statusline ?? "")).toBe(58);
+	});
+
 	it("caps panel height to avoid crowding the statusline", () => {
 		const lines = renderFocusedIssueWidgetLines(
 			state({
@@ -156,6 +170,90 @@ describe("focused issue sticky UI", () => {
 		);
 
 		expect(lines.length).toBeLessThanOrEqual(18);
-		expect(lines.at(-2)).toContain("…");
+		expect(lines.at(-3)).toContain("…");
+	});
+
+	it("renders a later slice when the focused issue panel is scrolled", () => {
+		const longDescription = Array.from({ length: 30 }, (_, index) => `Line ${String(index + 1).padStart(2, "0")}`).join("\n");
+
+		const atTop = renderFocusedIssueWidgetLines(
+			state({
+				status: "ready",
+				reference: "ENG-123",
+				issue: {
+					providerId: "linear",
+					id: "issue-id",
+					key: "ENG-123",
+					title: "Scrollable issue",
+					description: longDescription,
+					labels: [],
+					pullRequests: [],
+				},
+			}),
+			80,
+			Date.now(),
+			plainMarkdownTheme,
+		).join("\n");
+		const scrolled = renderFocusedIssueWidgetLines(
+			state({
+				status: "ready",
+				reference: "ENG-123",
+				issue: {
+					providerId: "linear",
+					id: "issue-id",
+					key: "ENG-123",
+					title: "Scrollable issue",
+					description: longDescription,
+					labels: [],
+					pullRequests: [],
+				},
+			}),
+			80,
+			Date.now(),
+			plainMarkdownTheme,
+			(text) => text,
+			10,
+		).join("\n");
+
+		expect(atTop).toContain("Line 01");
+		expect(atTop).not.toContain("Line 20");
+		expect(scrolled).toContain("Line 10");
+		expect(scrolled).toContain("Line 20");
+		expect(scrolled).not.toContain("Line 01");
+		expect(scrolled).toContain("↑");
+		expect(scrolled).toContain("↓");
+	});
+
+	it("reports the effective scroll offset when the requested offset is beyond the bottom", () => {
+		const longDescription = Array.from({ length: 30 }, (_, index) => `Line ${String(index + 1).padStart(2, "0")}`).join("\n");
+		let effectiveOffset: number | undefined;
+
+		renderFocusedIssueWidgetLines(
+			state({
+				status: "ready",
+				reference: "ENG-123",
+				issue: {
+					providerId: "linear",
+					id: "issue-id",
+					key: "ENG-123",
+					title: "Scrollable issue",
+					description: longDescription,
+					labels: [],
+					pullRequests: [],
+				},
+			}),
+			80,
+			Date.now(),
+			plainMarkdownTheme,
+			(text) => text,
+			100,
+			(text) => text,
+			(offset) => {
+				effectiveOffset = offset;
+			},
+		);
+
+		expect(effectiveOffset).toBeGreaterThan(0);
+		expect(effectiveOffset).toBeLessThan(100);
 	});
 });

@@ -65,13 +65,18 @@ function createProjectWithFocusedIssueConfig(config: Record<string, unknown>): s
 function loadExtension(provider: IssueProvider): {
 	commands: Map<string, { handler: (args: string, ctx: FakeCtx) => Promise<void>; getArgumentCompletions?: (prefix: string) => unknown[] }>;
 	handlers: Map<string, Handler>;
+	shortcuts: Map<string, { handler: (ctx: FakeCtx) => void }>;
 	pi: { appendEntry: ReturnType<typeof vi.fn> };
 } {
 	const commands = new Map<string, { handler: (args: string, ctx: FakeCtx) => Promise<void>; getArgumentCompletions?: (prefix: string) => unknown[] }>();
 	const handlers = new Map<string, Handler>();
+	const shortcuts = new Map<string, { handler: (ctx: FakeCtx) => void }>();
 	const pi = {
 		registerCommand: vi.fn((name: string, options: { handler: (args: string, ctx: FakeCtx) => Promise<void>; getArgumentCompletions?: (prefix: string) => unknown[] }) => {
 			commands.set(name, options);
+		}),
+		registerShortcut: vi.fn((shortcut: string, options: { handler: (ctx: FakeCtx) => void }) => {
+			shortcuts.set(shortcut, options);
 		}),
 		on: vi.fn((event: string, handler: Handler) => {
 			handlers.set(event, handler);
@@ -80,12 +85,12 @@ function loadExtension(provider: IssueProvider): {
 	};
 
 	createFocusedIssueExtension([provider])(pi as never);
-	return { commands, handlers, pi };
+	return { commands, handlers, shortcuts, pi };
 }
 
 describe("focused issue extension", () => {
 	it("registers focused issue commands and completions", () => {
-		const { commands } = loadExtension({
+		const { commands, shortcuts } = loadExtension({
 			id: "linear",
 			label: "Linear",
 			canHandle: () => true,
@@ -94,6 +99,7 @@ describe("focused issue extension", () => {
 
 		expect(commands.has("focus-issue")).toBe(true);
 		expect(commands.get("focus-issue")?.getArgumentCompletions?.("re")).toEqual([{ label: "refresh", value: "refresh" }]);
+		expect([...shortcuts.keys()].sort()).toEqual(["ctrl+shift+down", "ctrl+shift+up"]);
 	});
 
 	it("sets focus without awaiting provider fetch and renders the widget", async () => {
@@ -111,7 +117,6 @@ describe("focused issue extension", () => {
 
 		expect(provider.fetchIssue).toHaveBeenCalledTimes(1);
 		expect(ctx.ui.setWidget).toHaveBeenCalledWith("focused-issue", expect.any(Function), { placement: "aboveEditor" });
-		expect(ctx.ui.notify).toHaveBeenCalledWith("focused issue set: ENG-123", "info");
 	});
 
 	it("clears, refreshes, and shows focus", async () => {
@@ -130,7 +135,7 @@ describe("focused issue extension", () => {
 		await command?.handler("show", ctx);
 		await command?.handler("clear", ctx);
 
-		expect(ctx.ui.notify).toHaveBeenCalledWith("focused issue refresh started", "info");
+		expect(ctx.ui.notify).toHaveBeenCalledWith("Focused issue refresh started", "info");
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("ENG-123"), "info");
 		expect(ctx.ui.setWidget).toHaveBeenCalledWith("focused-issue", undefined, { placement: "aboveEditor" });
 	});
@@ -221,6 +226,26 @@ describe("focused issue extension", () => {
 		expect(result).toEqual({ action: "continue" });
 		expect(provider.fetchIssue).toHaveBeenCalledWith("ENG-123", expect.any(AbortSignal));
 		expect(ctx.ui.setWidget).toHaveBeenCalledWith("focused-issue", expect.any(Function), { placement: "aboveEditor" });
+	});
+
+	it("scrolls the focused issue widget with registered shortcuts", async () => {
+		const provider: IssueProvider = {
+			id: "linear",
+			label: "Linear",
+			canHandle: () => true,
+			fetchIssue: vi.fn(() => Promise.resolve({ ok: true, issue: issue() })),
+		};
+		const { commands, shortcuts } = loadExtension(provider);
+		const ctx = createCtx();
+
+		await commands.get("focus-issue")?.handler("ENG-123", ctx);
+		const callsBeforeScroll = ctx.ui.setWidget.mock.calls.length;
+		shortcuts.get("ctrl+shift+down")?.handler(ctx);
+		const callsAfterScrollDown = ctx.ui.setWidget.mock.calls.length;
+		shortcuts.get("ctrl+shift+up")?.handler(ctx);
+
+		expect(callsAfterScrollDown).toBe(callsBeforeScroll + 1);
+		expect(ctx.ui.setWidget.mock.calls.length).toBe(callsAfterScrollDown + 1);
 	});
 
 	it("does not auto-focus issue mentions when extension config disables it", async () => {
