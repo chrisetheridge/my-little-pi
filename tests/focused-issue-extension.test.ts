@@ -119,6 +119,23 @@ describe("focused issue extension", () => {
 		expect(ctx.ui.setWidget).toHaveBeenCalledWith("focused-issue", expect.any(Function), { placement: "aboveEditor" });
 	});
 
+	it("ignores unsupported focus references", async () => {
+		const provider: IssueProvider = {
+			id: "linear",
+			label: "Linear",
+			canHandle: (reference) => reference === "ENG-123",
+			fetchIssue: vi.fn(() => Promise.resolve({ ok: true, issue: issue() })),
+		};
+		const { commands } = loadExtension(provider);
+		const ctx = createCtx();
+
+		await commands.get("focus-issue")?.handler("not-an-issue", ctx);
+
+		expect(provider.fetchIssue).not.toHaveBeenCalled();
+		expect(ctx.ui.notify).not.toHaveBeenCalled();
+		expect(ctx.ui.setWidget).not.toHaveBeenCalled();
+	});
+
 	it("clears, refreshes, and shows focus", async () => {
 		const provider: IssueProvider = {
 			id: "linear",
@@ -138,6 +155,33 @@ describe("focused issue extension", () => {
 		expect(ctx.ui.notify).toHaveBeenCalledWith("Focused issue refresh started", "info");
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("ENG-123"), "info");
 		expect(ctx.ui.setWidget).toHaveBeenCalledWith("focused-issue", undefined, { placement: "aboveEditor" });
+	});
+
+	it("keeps the current focus when a lookup returns not found", async () => {
+		const provider: IssueProvider = {
+			id: "linear",
+			label: "Linear",
+			canHandle: () => true,
+			fetchIssue: vi.fn((reference) =>
+				Promise.resolve(
+					reference === "ENG-123"
+						? { ok: true, issue: issue() }
+						: { ok: false, error: { code: "not_found", message: "missing", retryable: false } },
+				),
+			),
+		};
+		const { commands } = loadExtension(provider);
+		const ctx = createCtx();
+		const command = commands.get("focus-issue");
+
+		await command?.handler("ENG-123", ctx);
+		await Promise.resolve();
+		await command?.handler("ENG-404", ctx);
+		await Promise.resolve();
+		await command?.handler("show", ctx);
+
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("ENG-123"), "info");
+		expect(ctx.ui.notify).not.toHaveBeenCalledWith(expect.stringContaining("missing"), expect.any(String));
 	});
 
 	it("injects pending context once and ready context once", async () => {

@@ -97,22 +97,14 @@ export class FocusedIssueController {
 
 	setFocus(reference: string): FocusedIssueState {
 		const normalized = normalizeReference(reference);
-		this.cancelFetch();
-		const version = this.state.version + 1;
-		const token = this.state.token + 1;
 		const provider = findProvider(normalized, this.providers);
 		if (!normalized || !provider) {
-			this.state = {
-				...INITIAL_STATE,
-				status: "error",
-				reference: normalized || reference,
-				error: unsupportedReferenceError(normalized || reference),
-				version,
-				token,
-			};
-			this.emit(true);
 			return this.getState();
 		}
+
+		const previousState = this.getState();
+		const version = previousState.version + 1;
+		const token = previousState.token + 1;
 
 		this.state = {
 			status: "loading",
@@ -121,13 +113,13 @@ export class FocusedIssueController {
 			issue: null,
 			error: null,
 			version,
-			lastInjectedVersion: this.state.lastInjectedVersion,
+			lastInjectedVersion: previousState.lastInjectedVersion,
 			pendingInjectedVersion: 0,
 			fetchedAt: null,
 			token,
 		};
 		this.emit(true);
-		this.startFetch(provider, normalized, token);
+		this.startFetch(provider, normalized, token, previousState);
 		return this.getState();
 	}
 
@@ -140,6 +132,7 @@ export class FocusedIssueController {
 			return this.getState();
 		}
 
+		const previousState = this.getState();
 		this.cancelFetch();
 		const token = this.state.token + 1;
 		const version = options.reinject ? this.state.version + 1 : this.state.version;
@@ -152,7 +145,7 @@ export class FocusedIssueController {
 			token,
 		};
 		this.emit(true);
-		this.startFetch(provider, reference, token);
+		this.startFetch(provider, reference, token, previousState);
 		return this.getState();
 	}
 
@@ -189,7 +182,7 @@ export class FocusedIssueController {
 		this.emit(true);
 	}
 
-	private startFetch(provider: IssueProvider, reference: string, token: number): void {
+	private startFetch(provider: IssueProvider, reference: string, token: number, previousState: FocusedIssueState): void {
 		const abortController = new AbortController();
 		this.abortController = abortController;
 		void provider.fetchIssue(reference, abortController.signal).then((result) => {
@@ -208,6 +201,11 @@ export class FocusedIssueController {
 				return;
 			}
 			if (result.error.code === "cancelled") return;
+			if (result.error.code === "not_found") {
+				this.state = { ...previousState };
+				this.emit(false);
+				return;
+			}
 			this.setError(result.error, token, true);
 		});
 	}

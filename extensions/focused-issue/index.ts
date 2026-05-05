@@ -164,9 +164,12 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 				ctx.ui.notify("Usage: /focus-issue <issue-ref|clear|refresh|show|inject>", "warning");
 				return;
 			}
+			const previousVersion = controller.getState().version;
 			resetScroll();
-			controller.setFocus(reference);
-			updateWidget(ctx, controller, scrollState);
+			const nextState = controller.setFocus(reference);
+			if (nextState.version !== previousVersion) {
+				updateWidget(ctx, controller, scrollState);
+			}
 		};
 
 		pi.registerShortcut(SCROLL_UP_SHORTCUT, {
