@@ -4,7 +4,7 @@ import { Markdown, truncateToWidth, visibleWidth, type Component, type MarkdownT
 import type { FocusedIssueState } from "./types.ts";
 
 const MAX_PANEL_CONTENT_LINES = 14;
-const STATUSLINE_TEXT = "Ctrl+Shift+Up / Ctrl+Shift+Down scroll";
+const STATUSLINE_TEXT = "Scroll: Ctrl+Shift+Up/Down  Close: Ctrl+Shift+W";
 
 function formatRelativeTime(timestamp: number | null, now: number): string | undefined {
 	if (!timestamp) return undefined;
@@ -160,6 +160,11 @@ function padLine(line: string, width: number): string {
 	return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
 }
 
+function alignLineRight(line: string, width: number): string {
+	const clipped = truncateToWidth(line, width);
+	return " ".repeat(Math.max(0, width - visibleWidth(clipped))) + clipped;
+}
+
 function renderBorderedMarkdown(
 	markdown: string,
 	width: number,
@@ -175,7 +180,7 @@ function renderBorderedMarkdown(
 	if (effectiveScrollOffset !== scrollOffset) {
 		onScrollOffsetChange?.(effectiveScrollOffset);
 	}
-	const statusLine = `${borderColor("│")} ${padLine(statusColor(STATUSLINE_TEXT), innerWidth)} ${borderColor("│")}`;
+	const statusLine = `${borderColor("│")} ${alignLineRight(statusColor(STATUSLINE_TEXT), innerWidth)} ${borderColor("│")}`;
 
 	const top = borderColor(`╭${"─".repeat(Math.max(0, width - 2))}╮`);
 	const bottom = borderColor(`╰${"─".repeat(Math.max(0, width - 2))}╯`);

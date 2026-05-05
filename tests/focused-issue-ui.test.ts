@@ -134,15 +134,18 @@ describe("focused issue sticky UI", () => {
 	it("renders a bottom statusline with focused issue shortcuts", () => {
 		const lines = renderFocusedIssueWidgetLines(
 			state({ status: "loading", reference: "ENG-123", providerId: "linear" }),
-			58,
+			80,
 			Date.now(),
 			plainMarkdownTheme,
 		);
 
 		const statusline = lines.at(-2);
-		expect(statusline).toContain("Ctrl+Shift+Up");
-		expect(statusline).toContain("Ctrl+Shift+Down");
-		expect(visibleWidth(statusline ?? "")).toBe(58);
+		expect(statusline).toContain("Scroll: Ctrl+Shift+Up/Down");
+		expect(statusline).toContain("Close: Ctrl+Shift+W");
+		expect(statusline).toContain("Ctrl+Shift+W");
+		expect(statusline).toMatch(/^│\s{2,}Scroll:/);
+		expect(statusline?.endsWith("Scroll: Ctrl+Shift+Up/Down  Close: Ctrl+Shift+W │")).toBe(true);
+		expect(visibleWidth(statusline ?? "")).toBe(80);
 	});
 
 	it("caps panel height to avoid crowding the statusline", () => {

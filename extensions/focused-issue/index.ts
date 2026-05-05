@@ -25,6 +25,7 @@ import { makeFocusedIssueWidgetFactory, renderFocusedIssuePlainLines } from "./u
 const COMMANDS = ["clear", "refresh", "show", "inject"];
 const SCROLL_UP_SHORTCUT = "ctrl+shift+up";
 const SCROLL_DOWN_SHORTCUT = "ctrl+shift+down";
+const CLOSE_SHORTCUT = "ctrl+shift+w";
 const GLOBAL_CONFIG_PATH = join(getAgentDir(), "extensions", "focused-issue.json");
 const PROJECT_CONFIG_FILE = join(".pi", "extensions", "focused-issue.json");
 
@@ -140,6 +141,13 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 			scrollState.offset = Math.max(0, scrollState.offset + delta);
 			updateWidget(ctx, controller, scrollState);
 		};
+		const closeWidget = (ctx: ExtensionContext): void => {
+			if (controller.getState().status === "idle") return;
+			lastCtx = ctx;
+			resetScroll();
+			controller.clear();
+			updateWidget(ctx, controller, scrollState);
+		};
 		const controller = new FocusedIssueController({
 			providers,
 			onChange: (state) => {
@@ -168,6 +176,10 @@ export function createFocusedIssueExtension(providers: IssueProvider[]): (pi: Ex
 		pi.registerShortcut(SCROLL_DOWN_SHORTCUT, {
 			description: "Scroll focused issue down",
 			handler: (ctx) => scrollWidget(1, ctx),
+		});
+		pi.registerShortcut(CLOSE_SHORTCUT, {
+			description: "Close focused issue",
+			handler: closeWidget,
 		});
 
 		pi.registerCommand("focus-issue", {

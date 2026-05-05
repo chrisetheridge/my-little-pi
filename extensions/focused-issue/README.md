@@ -35,6 +35,12 @@ Ctrl+Shift+Down
 Ctrl+Shift+Up
 ```
 
+Close the sticky focused issue panel:
+
+```text
+Ctrl+Shift+W
+```
+
 ## Automatic Focus
 
 When `autoFocusIssueMentions` is enabled, Pi inspects user input before the assistant starts. If the message contains a supported issue reference, the extension focuses that issue and displays the focused issue UI.
