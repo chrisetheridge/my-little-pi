@@ -7,40 +7,40 @@ const LOADER_INTERVAL_MS = 250;
 const LOADER_PATCH_FLAG = Symbol.for("little-spinner:loader-patched");
 
 function patchLoader(): void {
-	const proto = Loader.prototype as any;
-	if (proto[LOADER_PATCH_FLAG]) return;
+  const proto = Loader.prototype as any;
+  if (proto[LOADER_PATCH_FLAG]) return;
 
-	proto.updateDisplay = function patchedUpdateDisplay() {
-		const frame = SPINNER_FRAMES[this.currentFrame % SPINNER_FRAMES.length];
-		const ansiRe = new RegExp(`${"\u001b"}\\[[0-9;]*m`);
-		const message =
-			typeof this.message === "string" && ansiRe.test(this.message)
-				? this.message
-				: this.messageColorFn(this.message);
-		const nextText = `${this.spinnerColorFn(frame)} ${message}`;
-		if (this.text === nextText) return;
-		this.setText(nextText);
-		if (this.ui) {
-			this.ui.requestRender();
-		}
-	};
+  proto.updateDisplay = function patchedUpdateDisplay() {
+    const frame = SPINNER_FRAMES[this.currentFrame % SPINNER_FRAMES.length];
+    const ansiRe = new RegExp(`${"\u001b"}\\[[0-9;]*m`);
+    const message =
+      typeof this.message === "string" && ansiRe.test(this.message)
+        ? this.message
+        : this.messageColorFn(this.message);
+    const nextText = `${this.spinnerColorFn(frame)} ${message}`;
+    if (this.text === nextText) return;
+    this.setText(nextText);
+    if (this.ui) {
+      this.ui.requestRender();
+    }
+  };
 
-	proto.start = function patchedStart() {
-		this.stop();
-		this.updateDisplay();
-		const scheduleNext = () => {
-			this.intervalId = setTimeout(() => {
-				this.currentFrame = (this.currentFrame + 1) % SPINNER_FRAMES.length;
-				this.updateDisplay();
-				scheduleNext();
-			}, LOADER_INTERVAL_MS);
-		};
-		scheduleNext();
-	};
+  proto.start = function patchedStart() {
+    this.stop();
+    this.updateDisplay();
+    const scheduleNext = () => {
+      this.intervalId = setTimeout(() => {
+        this.currentFrame = (this.currentFrame + 1) % SPINNER_FRAMES.length;
+        this.updateDisplay();
+        scheduleNext();
+      }, LOADER_INTERVAL_MS);
+    };
+    scheduleNext();
+  };
 
-	proto[LOADER_PATCH_FLAG] = true;
+  proto[LOADER_PATCH_FLAG] = true;
 }
 
 export default function littleSpinnerExtension(_pi: ExtensionAPI): void {
-	patchLoader();
+  patchLoader();
 }

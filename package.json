@@ -67,7 +67,7 @@
     "@mariozechner/pi-agent-core": "latest",
     "@mariozechner/pi-coding-agent": "latest",
     "@mariozechner/pi-tui": "latest",
-    "eslint": "^10.3.0",
+    "@biomejs/biome": "^2.4.14",
     "globals": "^17.6.0",
     "jiti": "^2.6.1",
     "typebox": "latest",

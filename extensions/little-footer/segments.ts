@@ -51,10 +51,7 @@ const THINKING_COLORS: Record<string, ThemeColor> = {
 };
 
 /** Render model segment. Returns null if modelId is empty/undefined. */
-export function renderModel(
-  theme: ThemeFn,
-  modelId: string | undefined,
-): string | null {
+export function renderModel(theme: ThemeFn, modelId: string | undefined): string | null {
   if (!modelId) return null;
   const display = formatModelDisplay(modelId);
   if (!display) return null;
@@ -74,11 +71,7 @@ export function renderThinking(
 }
 
 /** Render path basename segment. */
-export function renderPath(
-  theme: ThemeFn,
-  icons: IconSet,
-  cwd: string,
-): string {
+export function renderPath(theme: ThemeFn, icons: IconSet, cwd: string): string {
   const basename = formatPathBasename(cwd);
   return `${theme.fg("text", icons.path)} ${theme.fg("text", basename)}`;
 }
@@ -114,21 +107,13 @@ export function renderGit(
 }
 
 /** Render token count segment. Returns null for zero tokens. */
-export function renderTokens(
-  theme: ThemeFn,
-  icons: IconSet,
-  totalTokens: number,
-): string | null {
+export function renderTokens(theme: ThemeFn, icons: IconSet, totalTokens: number): string | null {
   if (totalTokens === 0) return null;
   return `${theme.fg("text", icons.tokens)} ${theme.fg("text", formatTokens(totalTokens))}`;
 }
 
 /** Render cost segment. Returns null for zero cost. */
-export function renderCost(
-  theme: ThemeFn,
-  icons: IconSet,
-  costUsd: number,
-): string | null {
+export function renderCost(theme: ThemeFn, icons: IconSet, costUsd: number): string | null {
   if (costUsd === 0) return null;
   return `${theme.fg("text", icons.cost)} ${theme.fg("text", formatCost(costUsd))}`;
 }
@@ -152,10 +137,7 @@ function formatPercentCompact(value: number): string {
   return `${rounded}%`;
 }
 
-function renderQuotaWindow(
-  theme: ThemeFn,
-  window: QuotaWindowInput,
-): string | null {
+function renderQuotaWindow(theme: ThemeFn, window: QuotaWindowInput): string | null {
   if (!Number.isFinite(window.usedPercent)) return null;
   const availablePercent = Math.max(0, 100 - window.usedPercent);
   const color = window.usedPercent >= 90 ? "error" : window.usedPercent >= 70 ? "warning" : "dim";
@@ -194,19 +176,13 @@ export function renderQuota(
 }
 
 /** Render extension status segment. */
-export function renderExtensionStatus(
-  theme: ThemeFn,
-  value: string,
-): string {
+export function renderExtensionStatus(theme: ThemeFn, value: string): string {
   const sanitized = sanitizeStatusText(value);
   return theme.fg("muted", sanitized);
 }
 
 /** Render time segment. */
-export function renderTime(
-  theme: ThemeFn,
-  icons: IconSet,
-): string {
+export function renderTime(theme: ThemeFn, icons: IconSet): string {
   const now = new Date();
   const hours = String(now.getHours()).padStart(2, "0");
   const minutes = String(now.getMinutes()).padStart(2, "0");

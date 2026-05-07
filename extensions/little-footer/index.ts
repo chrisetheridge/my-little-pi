@@ -129,7 +129,9 @@ function collectUsage(ctx: ExtensionContext): UsageTotals {
 
     for (const entry of branch) {
       if (entry.type !== "message") continue;
-      const msg = entry.message as AgentMessage & { usage?: { input?: number; output?: number; cost?: { total?: number } } };
+      const msg = entry.message as AgentMessage & {
+        usage?: { input?: number; output?: number; cost?: { total?: number } };
+      };
       if (msg.role !== "assistant") continue;
 
       const usage = msg.usage;
@@ -179,7 +181,9 @@ function buildLine(
   const gitDirty = isGitDirty(ctx.cwd);
   const gitDiff = gitDirty ? collectGitDiffStatsCached(ctx.cwd) : null;
 
-  const showQuotaUsage = isOpenAICodexModel(ctx.model as { id?: string; provider?: string } | undefined);
+  const showQuotaUsage = isOpenAICodexModel(
+    ctx.model as { id?: string; provider?: string } | undefined,
+  );
   quotaTracker.setEnabled(showQuotaUsage);
 
   // Build left segments
@@ -256,11 +260,7 @@ function buildLine(
 }
 
 /** Activate the footer for the given context. */
-function activateFooter(
-  ctx: ExtensionContext,
-  pi: ExtensionAPI,
-  icons: IconSet,
-): void {
+function activateFooter(ctx: ExtensionContext, pi: ExtensionAPI, icons: IconSet): void {
   let invalidateRef: (() => void) | undefined;
   const quotaTracker = createCodexQuotaTracker(ctx, () => {
     invalidateRef?.();

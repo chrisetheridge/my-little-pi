@@ -36,7 +36,9 @@ interface ChatGptUsageResponse {
   };
 }
 
-const CHATGPT_BASE_URL = (process.env.CHATGPT_BASE_URL || "https://chatgpt.com/backend-api").replace(/\/+$/, "");
+const CHATGPT_BASE_URL = (
+  process.env.CHATGPT_BASE_URL || "https://chatgpt.com/backend-api"
+).replace(/\/+$/, "");
 const OPENAI_AUTH_CLAIM = "https://api.openai.com/auth";
 const REFRESH_INTERVAL_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -48,7 +50,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> {
     const decoded = Buffer.from(parts[1], "base64url").toString("utf8");
     const payload = JSON.parse(decoded) as unknown;
     return payload && typeof payload === "object" && !Array.isArray(payload)
-      ? payload as Record<string, unknown>
+      ? (payload as Record<string, unknown>)
       : {};
   } catch {
     return {};
@@ -67,9 +69,8 @@ function normalizeWindow(window: ChatGptUsageWindow | undefined): QuotaWindowSna
   if (!window || typeof window !== "object") return null;
   if (typeof window.used_percent !== "number") return null;
 
-  const durationSeconds = typeof window.limit_window_seconds === "number"
-    ? window.limit_window_seconds
-    : null;
+  const durationSeconds =
+    typeof window.limit_window_seconds === "number" ? window.limit_window_seconds : null;
   const resetSeconds = typeof window.reset_at === "number" ? window.reset_at : null;
 
   return {
@@ -130,7 +131,7 @@ async function readCodexQuotaSnapshot(ctx: ExtensionContext): Promise<QuotaSnaps
       signal: timeout.signal,
     });
     if (!response.ok) return null;
-    return extractQuotaSnapshot(await response.json() as ChatGptUsageResponse);
+    return extractQuotaSnapshot((await response.json()) as ChatGptUsageResponse);
   } catch {
     return null;
   } finally {
