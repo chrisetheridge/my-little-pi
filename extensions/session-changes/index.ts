@@ -214,18 +214,17 @@ export class SessionChangesWidget implements Component {
     }
 
     const lines: string[] = [];
-    const title = this.theme.fg("accent", this.theme.bold("Changed this session"));
+    const title = this.theme.fg("accent", this.theme.bold("changes"));
     const count = this.theme.fg("muted", ` ${files.length} file${files.length === 1 ? "" : "s"}`);
     lines.push(truncateToWidth(`${title}${count}`, width));
 
     for (const file of files.slice(0, MAX_VISIBLE_FILES)) {
-      const marker = this.theme.fg("accent", "●");
+      const marker = this.theme.fg("accent", "-");
       const pathText = this.theme.fg("text", file.path);
       const added = file.added > 0 ? ` ${this.theme.fg("toolDiffAdded", `+${file.added}`)}` : "";
       const deleted =
         file.deleted > 0 ? ` ${this.theme.fg("toolDiffRemoved", `-${file.deleted}`)}` : "";
-      const touchSuffix = file.touches > 1 ? this.theme.fg("dim", ` ×${file.touches}`) : "";
-      lines.push(truncateToWidth(`${marker} ${pathText}${added}${deleted}${touchSuffix}`, width));
+      lines.push(truncateToWidth(`${marker} ${pathText}${added}${deleted}`, width));
     }
 
     const hidden = files.length - MAX_VISIBLE_FILES;
