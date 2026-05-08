@@ -54,12 +54,10 @@ pi -e ./
 
 ## Use
 
-- Run `/little-pi` in Pi to verify the example extension loaded.
 - File hooks now live in the sibling [pi-file-hooks](../pi-file-hooks) project.
 - Run `/review-staged` to expand the staged-code-review prompt template.
 - Run `/debug-issue <description>` to expand the debugging prompt template.
 - Run `/skill:pi-package-maintainer` when changing this package.
-- Run `/answer` to turn the last assistant message into an interactive Q&A flow.
 - Select the `my-little-pi` theme in `/settings`, or set it manually:
 
 ```json
@@ -67,6 +65,27 @@ pi -e ./
   "theme": "my-little-pi"
 }
 ```
+
+## Extensions
+
+### `session-changes`
+
+Shows a small "Changed this session" widget above the editor while Pi is running.
+It tracks successful `edit` and `write` tool results, then displays the most recently changed files with approximate `+added` / `-deleted` line counts and repeat-touch counts.
+
+On session start it rebuilds the widget from the current session branch, so resumed sessions still show files changed earlier in that branch.
+
+### `startup-screen`
+
+Replaces Pi's default startup header with a recent-session launcher.
+It lists the last 10 sessions across all projects with:
+
+- modified date/time
+- folder/repo name
+- session title, using the explicit session name when available and falling back to the first user message
+
+When the editor is empty, use `↑` / `↓` to move through the list and `Enter` to load the selected session.
+Typing normally ignores the launcher. You can also run `/recent` to open an interactive picker, or `/recent <index>` to load a numbered recent session directly.
 
 ## Develop
 
@@ -102,7 +121,11 @@ Themes hot-reload when the active theme file changes.
       "./extensions/downtime/index.ts",
       "./extensions/little-footer/index.ts",
       "./extensions/little-renderer/index.ts",
-      "./extensions/little-spinner/index.ts"
+      "./extensions/review/index.ts",
+      "./extensions/little-spinner/index.ts",
+      "./extensions/focused-issue/index.ts",
+      "./extensions/session-changes/index.ts",
+      "./extensions/startup-screen/index.ts"
     ],
     "skills": ["./skills"],
     "prompts": ["./prompts"],
