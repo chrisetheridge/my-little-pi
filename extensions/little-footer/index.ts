@@ -11,7 +11,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { detectNerdFonts, iconsFor, type IconSet } from "./icons.ts";
+import { iconsFor, type IconSet } from "./icons.ts";
 import { createCodexQuotaTracker, type QuotaTracker } from "./codex-usage.ts";
 import {
   renderCost,
@@ -287,8 +287,7 @@ function activateFooter(ctx: ExtensionContext, pi: ExtensionAPI, icons: IconSet)
 
 /** Default export - the extension factory. */
 export default function littleFooterExtension(pi: ExtensionAPI): void {
-  const useNerd = detectNerdFonts();
-  const icons = iconsFor(useNerd);
+  const icons = iconsFor();
   let enabled = true;
 
   pi.on("session_start", (_event, ctx) => {
@@ -309,10 +308,9 @@ export default function littleFooterExtension(pi: ExtensionAPI): void {
     },
     handler: async (args: string, ctx: ExtensionContext) => {
       const sub = args.trim().toLowerCase() || "status";
-      const iconMode = useNerd ? "nerd icons" : "ascii icons";
 
       if (sub === "status") {
-        ctx.ui.notify(`little-footer: ${enabled ? "on" : "off"} (${iconMode})`, "info");
+        ctx.ui.notify(`little-footer: ${enabled ? "on" : "off"} (ascii icons)`, "info");
       } else if (sub === "on") {
         enabled = true;
         activateFooter(ctx, pi, icons);

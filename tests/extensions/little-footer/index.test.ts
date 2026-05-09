@@ -98,9 +98,7 @@ function createCtx(overrides: Partial<FakeCtx> = {}): FakeCtx {
   };
 }
 
-async function loadExtension(env: Record<string, string> = {}): Promise<LoadedExtension> {
-  Object.assign(process.env, env);
-
+async function loadExtension(): Promise<LoadedExtension> {
   const commands = new Map<
     string,
     {
@@ -147,18 +145,14 @@ async function loadExtension(env: Record<string, string> = {}): Promise<LoadedEx
 
 describe("little-footer extension", () => {
   it("registers session_start and footer command", async () => {
-    const { commands, handlers } = await loadExtension({
-      LITTLE_FOOTER_NERD_FONTS: "0",
-    });
+    const { commands, handlers } = await loadExtension();
 
     expect(handlers.has("session_start")).toBe(true);
     expect(commands.has("footer")).toBe(true);
   });
 
   it("auto-enables the footer on session_start", async () => {
-    const { handlers } = await loadExtension({
-      LITTLE_FOOTER_NERD_FONTS: "0",
-    });
+    const { handlers } = await loadExtension();
     const ctx = createCtx();
 
     await handlers.get("session_start")?.({}, ctx);
@@ -168,9 +162,7 @@ describe("little-footer extension", () => {
   });
 
   it("reports status and icon mode", async () => {
-    const { commands } = await loadExtension({
-      LITTLE_FOOTER_NERD_FONTS: "0",
-    });
+    const { commands } = await loadExtension();
     const ctx = createCtx();
     const command = commands.get("footer");
 
@@ -184,9 +176,7 @@ describe("little-footer extension", () => {
   });
 
   it("reports off after disabling the footer", async () => {
-    const { commands } = await loadExtension({
-      LITTLE_FOOTER_NERD_FONTS: "1",
-    });
+    const { commands } = await loadExtension();
     const ctx = createCtx();
     const command = commands.get("footer");
 
@@ -195,13 +185,11 @@ describe("little-footer extension", () => {
     await command?.handler("status", ctx);
 
     expect(ctx.ui.setFooter).toHaveBeenCalledWith(undefined);
-    expect(ctx.ui.notify).toHaveBeenLastCalledWith("little-footer: off (nerd icons)", "info");
+    expect(ctx.ui.notify).toHaveBeenLastCalledWith("little-footer: off (ascii icons)", "info");
   });
 
   it("re-enables the footer after turning it off", async () => {
-    const { handlers, commands } = await loadExtension({
-      LITTLE_FOOTER_NERD_FONTS: "0",
-    });
+    const { handlers, commands } = await loadExtension();
     const ctx = createCtx();
     const sessionStart = handlers.get("session_start");
     const command = commands.get("footer");
@@ -245,9 +233,7 @@ describe("little-footer extension", () => {
         resetsAt: null,
       },
     };
-    const { handlers } = await loadExtension({
-      LITTLE_FOOTER_NERD_FONTS: "0",
-    });
+    const { handlers } = await loadExtension();
     const ctx = createCtx({
       cwd: "/Users/me/my-little-pi/",
       model: { id: "gpt-5.2", provider: "openai-codex" },
@@ -301,9 +287,7 @@ describe("little-footer extension", () => {
   });
 
   it("omits quota usage for non-openai models", async () => {
-    const { handlers } = await loadExtension({
-      LITTLE_FOOTER_NERD_FONTS: "0",
-    });
+    const { handlers } = await loadExtension();
     const ctx = createCtx({
       model: { id: "anthropic/claude-sonnet-4-6" },
       getContextUsage: () => ({ tokens: 50_000, percent: 25, contextWindow: 200000 }),
@@ -334,9 +318,7 @@ describe("little-footer extension", () => {
   });
 
   it("shows dirty indicator when git repo has uncommitted changes", async () => {
-    const { handlers } = await loadExtension({
-      LITTLE_FOOTER_NERD_FONTS: "0",
-    });
+    const { handlers } = await loadExtension();
     const ctx = createCtx({
       cwd: "/Users/chrise/code/private/my-little-pi",
       getContextUsage: () => undefined,
@@ -366,9 +348,7 @@ describe("little-footer extension", () => {
   });
 
   it("truncates the rendered line to the requested width", async () => {
-    const { handlers } = await loadExtension({
-      LITTLE_FOOTER_NERD_FONTS: "0",
-    });
+    const { handlers } = await loadExtension();
     const ctx = createCtx({
       sessionManager: {
         getBranch: () => [
@@ -408,9 +388,7 @@ describe("little-footer extension", () => {
   });
 
   it("keeps invalidate usable even when called detached from the component", async () => {
-    const { handlers } = await loadExtension({
-      LITTLE_FOOTER_NERD_FONTS: "0",
-    });
+    const { handlers } = await loadExtension();
     const ctx = createCtx();
 
     await handlers.get("session_start")?.({}, ctx);
