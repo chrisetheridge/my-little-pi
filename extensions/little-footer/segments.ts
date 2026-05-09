@@ -73,7 +73,7 @@ export function renderThinking(
 /** Render path basename segment. */
 export function renderPath(theme: ThemeFn, icons: IconSet, cwd: string): string {
   const basename = formatPathBasename(cwd);
-  return `${theme.fg("text", icons.path)} ${theme.fg("text", basename)}`;
+  return `${theme.fg("text", icons.path)}${theme.fg("text", basename)}`;
 }
 
 /** Render git branch segment. Returns null if branch is null.

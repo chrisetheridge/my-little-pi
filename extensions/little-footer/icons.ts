@@ -18,7 +18,7 @@ export interface IconSet {
 const NERD_ICONS: IconSet = {
   model: "◈",
   thinking: "?",
-  path: "dir",
+  path: "",
   git: "git",
   dirty: "!",
   tokens: "tok",
@@ -31,7 +31,7 @@ const NERD_ICONS: IconSet = {
 const ASCII_ICONS: IconSet = {
   model: "model",
   thinking: "think",
-  path: "dir",
+  path: "",
   git: "git",
   dirty: "*",
   tokens: "tok",
