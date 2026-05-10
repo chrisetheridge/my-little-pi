@@ -1,5 +1,20 @@
-import { SessionManager, type ExtensionAPI, type SessionInfo, type Theme } from "@mariozechner/pi-coding-agent";
-import { Key, isKeyRelease, matchesKey, truncateToWidth, visibleWidth, type Component } from "@mariozechner/pi-tui";
+import {
+  SessionManager,
+  VERSION,
+  type ExtensionAPI,
+  type ExtensionContext,
+  type SessionInfo,
+  type Theme,
+} from "@mariozechner/pi-coding-agent";
+import {
+  Key,
+  isKeyRelease,
+  matchesKey,
+  truncateToWidth,
+  visibleWidth,
+  type Component,
+  type TUI,
+} from "@mariozechner/pi-tui";
 import path from "node:path";
 
 const MAX_SESSIONS = 10;
@@ -17,35 +32,90 @@ interface RecentSessionsState {
   selected: number;
 }
 
-class RecentSessionsHeader implements Component {
+class StartupHeader implements Component {
+  readonly #unsubscribe?: () => void;
+
   constructor(
+    private readonly tui: TUI,
+    private readonly ctx: ExtensionContext,
     private readonly state: RecentSessionsState,
     private readonly theme: Theme,
     private readonly error?: string,
-  ) {}
+  ) {
+    this.#unsubscribe = ctx.ui.onTerminalInput(data => this.#onTerminalInput(data));
+  }
 
   render(width: number): string[] {
     if (width <= 0) return [];
 
+    const maxWidth = Math.min(width, 104);
+    const canUseColumns = maxWidth >= 72;
+    const leftWidth = canUseColumns ? 24 : maxWidth;
+    const rightWidth = canUseColumns ? maxWidth - leftWidth - 3 : maxWidth;
+
+    const left = this.#renderIdentity(leftWidth);
+    const right = this.#renderRecentSessions(rightWidth);
+    const lines: string[] = [""];
+
+    if (!canUseColumns) {
+      lines.push(...left.map(line => truncateToWidth(line, width)));
+      lines.push("");
+      lines.push(...right.map(line => truncateToWidth(line, width)));
+      lines.push("");
+      return lines;
+    }
+
+    const rows = Math.max(left.length, right.length);
+    for (let i = 0; i < rows; i++) {
+      const lhs = fitAnsi(left[i] ?? "", leftWidth);
+      const sep = this.theme.fg("dim", " │ ");
+      const rhs = fitAnsi(right[i] ?? "", rightWidth);
+      lines.push(truncateToWidth(lhs + sep + rhs, width));
+    }
+
+    lines.push("");
+    return lines;
+  }
+
+  invalidate(): void {}
+
+  dispose(): void {
+    this.#unsubscribe?.();
+  }
+
+  #renderIdentity(width: number): string[] {
+    const model = this.ctx.model?.name ?? "unknown model";
+    const provider = this.ctx.model?.provider ?? "unknown provider";
+    const subtitle = `${this.theme.fg("muted", "pi")}${this.theme.fg("dim", ` v${VERSION}`)}`;
+
+    return [
+      centerAnsi(this.theme.bold(this.theme.fg("accent", "my little pi")), width),
+      "",
+      ...getPiMascot(this.theme).map(line => centerAnsi(line, width)),
+      "",
+      centerAnsi(this.theme.fg("muted", model), width),
+      centerAnsi(this.theme.fg("dim", provider), width),
+      centerAnsi(subtitle, width),
+    ];
+  }
+
+  #renderRecentSessions(width: number): string[] {
     const lines: string[] = [];
-    const title = this.theme.fg("accent", this.theme.bold("Recent Pi sessions"));
-    lines.push(truncateToWidth(title, width));
+    lines.push(this.theme.bold(this.theme.fg("accent", "Recent sessions")));
 
     if (this.error) {
-      lines.push(truncateToWidth(this.theme.fg("warning", `Could not load sessions: ${this.error}`), width));
-      lines.push("");
+      lines.push(this.theme.fg("warning", `Could not load sessions: ${this.error}`));
       return lines;
     }
 
     if (this.state.rows.length === 0) {
-      lines.push(truncateToWidth(this.theme.fg("dim", "No previous sessions found."), width));
-      lines.push("");
+      lines.push(this.theme.fg("dim", "No previous sessions found."));
       return lines;
     }
 
     const markerWidth = 2;
-    const dateWidth = Math.min(16, Math.max(10, Math.floor(width * 0.18)));
-    const repoWidth = Math.min(34, Math.max(14, Math.floor(width * 0.28)));
+    const dateWidth = Math.min(15, Math.max(10, Math.floor(width * 0.2)));
+    const repoWidth = Math.min(28, Math.max(12, Math.floor(width * 0.3)));
     const gap = "  ";
     const fixedWidth = markerWidth + dateWidth + repoWidth + visibleWidth(gap) * 2;
     const titleWidth = Math.max(8, width - fixedWidth);
@@ -56,8 +126,8 @@ class RecentSessionsHeader implements Component {
       gap +
       this.theme.fg("dim", padAnsi("folder/repo", repoWidth)) +
       gap +
-      this.theme.fg("dim", "title");
-    lines.push(truncateToWidth(heading, width));
+      this.theme.fg("dim", "context");
+    lines.push(heading);
 
     this.state.rows.forEach((row, index) => {
       const isSelected = index === this.state.selected;
@@ -66,20 +136,37 @@ class RecentSessionsHeader implements Component {
       const repo = this.theme.fg(isSelected ? "accent" : "text", padAnsi(row.repo, repoWidth));
       const sessionTitle = truncateToWidth(row.title || row.cwd, titleWidth, "…");
       const line = marker + date + gap + repo + gap + sessionTitle;
-      lines.push(truncateToWidth(isSelected ? this.theme.bg("selectedBg", line) : line, width));
+      lines.push(isSelected ? this.theme.bg("selectedBg", line) : line);
     });
 
     lines.push(
-      truncateToWidth(
-        this.theme.fg("dim", "↑↓ choose recent session • enter load • type normally to ignore • /recent opens picker"),
-        width,
-      ),
+      this.theme.fg("dim", "↑↓ choose • enter load • /recent opens picker"),
     );
-    lines.push("");
     return lines;
   }
 
-  invalidate(): void {}
+  #onTerminalInput(data: string): { consume?: boolean; data?: string } | undefined {
+    if (this.state.rows.length === 0) return undefined;
+    if (this.ctx.ui.getEditorText().trim().length > 0) return undefined;
+    if (isKeyRelease(data)) return { consume: true };
+
+    if (matchesKey(data, Key.up)) {
+      this.state.selected = clamp(this.state.selected - 1, 0, this.state.rows.length - 1);
+      this.tui.requestRender();
+      return { consume: true };
+    }
+
+    if (matchesKey(data, Key.down)) {
+      this.state.selected = clamp(this.state.selected + 1, 0, this.state.rows.length - 1);
+      this.tui.requestRender();
+      return { consume: true };
+    }
+
+    if (matchesKey(data, Key.enter)) {
+      this.ctx.ui.setEditorText(`/recent ${this.state.selected}`);
+      return { data };
+    }
+  }
 }
 
 export default function (pi: ExtensionAPI) {
@@ -90,40 +177,21 @@ export default function (pi: ExtensionAPI) {
 
     try {
       state = { rows: await loadRows(), selected: 0 };
-      ctx.ui.setHeader((tui, theme) => {
-        const header = new RecentSessionsHeader(state, theme);
-        return {
-          render: (width: number) => header.render(width),
-          invalidate: () => header.invalidate(),
-          dispose: ctx.ui.onTerminalInput((data) => {
-            if (state.rows.length === 0) return;
-            if (ctx.ui.getEditorText().trim().length > 0) return;
-            if (isKeyRelease(data)) return { consume: true };
-
-            if (matchesKey(data, Key.up)) {
-              state.selected = clamp(state.selected - 1, 0, state.rows.length - 1);
-              tui.requestRender();
-              return { consume: true };
-            }
-
-            if (matchesKey(data, Key.down)) {
-              state.selected = clamp(state.selected + 1, 0, state.rows.length - 1);
-              tui.requestRender();
-              return { consume: true };
-            }
-
-            if (matchesKey(data, Key.enter)) {
-              ctx.ui.setEditorText(`/recent ${state.selected}`);
-              return { data };
-            }
-          }),
-        };
-      });
+      ctx.ui.setHeader((tui, theme) => new StartupHeader(tui, ctx, state, theme));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      ctx.ui.setHeader((_tui, theme) => new RecentSessionsHeader({ rows: [], selected: 0 }, theme, message));
+      ctx.ui.setHeader((tui, theme) => new StartupHeader(tui, ctx, { rows: [], selected: 0 }, theme, message));
     }
   });
+}
+
+function getPiMascot(theme: Theme): string[] {
+  const piBlue = (text: string) => theme.fg("accent", text);
+  const eye = `${theme.fg("text", "█")}${theme.fg("dim", "▌")}`;
+  const bar = piBlue("█".repeat(14));
+  const leg = `${piBlue("██")}    ${piBlue("██")}`;
+
+  return [`     ${eye}  ${eye}`, `  ${bar}`, `     ${leg}`, `     ${leg}`, `     ${leg}`];
 }
 
 async function loadRows(): Promise<RecentSessionRow[]> {
@@ -165,9 +233,20 @@ function normalizeTitle(title: string | undefined): string {
   return normalized || "(untitled)";
 }
 
+function centerAnsi(value: string, width: number): string {
+  const clipped = truncateToWidth(value, width, "…");
+  const padding = Math.max(0, width - visibleWidth(clipped));
+  const left = Math.floor(padding / 2);
+  return " ".repeat(left) + clipped + " ".repeat(padding - left);
+}
+
+function fitAnsi(value: string, width: number): string {
+  const clipped = truncateToWidth(value, width, "…");
+  return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
+}
+
 function padAnsi(value: string, width: number): string {
-  const truncated = truncateToWidth(value, width, "…");
-  return truncated + " ".repeat(Math.max(0, width - visibleWidth(truncated)));
+  return fitAnsi(value, width);
 }
 
 function clamp(value: number, min: number, max: number): number {
