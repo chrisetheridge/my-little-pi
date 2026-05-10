@@ -33,8 +33,7 @@ describe("iconsFor", () => {
       dirty: "*",
       tokens: "tok",
       cost: "",
-      context: "ctx",
-      time: "tm",
+      time: "",
       separator: "|",
     });
     for (const icon of Object.values(icons)) {

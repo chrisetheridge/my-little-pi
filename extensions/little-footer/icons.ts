@@ -22,7 +22,7 @@ const ICONS: IconSet = {
   dirty: "*",
   tokens: "tok",
   cost: "",
-  time: "tm",
+  time: "",
   separator: "|",
 };
 

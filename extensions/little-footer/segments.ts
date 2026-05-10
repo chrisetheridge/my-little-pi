@@ -185,5 +185,5 @@ export function renderTime(theme: ThemeFn, icons: IconSet): string {
   const now = new Date();
   const hours = String(now.getHours()).padStart(2, "0");
   const minutes = String(now.getMinutes()).padStart(2, "0");
-  return `${theme.fg("muted", icons.time)} ${theme.fg("muted", `${hours}:${minutes}`)}`;
+  return `${theme.fg("muted", icons.time)}${theme.fg("muted", `${hours}:${minutes}`)}`;
 }
