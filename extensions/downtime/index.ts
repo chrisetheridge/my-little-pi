@@ -57,6 +57,7 @@ interface DowntimeMessageDetails {
 
 interface DowntimeState {
   confirmedWindowKey: string | null;
+  pausedWindowKey: string | null;
   announcedWindowKey: string | null;
   wasActive: boolean;
   pendingConfirmation: Promise<boolean> | null;
@@ -230,10 +231,20 @@ function formatFooterLabel(
   config: DowntimeConfig,
   window: DowntimeWindow,
   confirmed: boolean,
+  paused: boolean,
 ): string {
   const base = `${config.statusLabel} ${window.label}`;
   if (!window.active) return base;
+  if (paused) return `${base} paused`;
   return confirmed ? `${base} confirmed` : `${base} active`;
+}
+
+function isWindowConfirmed(state: DowntimeState, window: DowntimeWindow): boolean {
+  return state.confirmedWindowKey === window.key;
+}
+
+function isWindowPaused(state: DowntimeState, window: DowntimeWindow): boolean {
+  return state.pausedWindowKey === window.key;
 }
 
 function updateFooterStatus(
@@ -241,6 +252,7 @@ function updateFooterStatus(
   config: DowntimeConfig,
   window: DowntimeWindow,
   confirmed: boolean,
+  paused = false,
 ): void {
   if (!ctx.hasUI) return;
   if (!window.active) {
@@ -248,10 +260,10 @@ function updateFooterStatus(
     return;
   }
 
-  const role = confirmed ? "success" : "warning";
+  const role = paused ? "muted" : confirmed ? "success" : "warning";
   ctx.ui.setStatus(
     DOWNTIME_CUSTOM_TYPE,
-    ctx.ui.theme.fg(role, formatFooterLabel(config, window, confirmed)),
+    ctx.ui.theme.fg(role, formatFooterLabel(config, window, confirmed, paused)),
   );
 }
 
@@ -259,13 +271,18 @@ function buildPolicyMessage(
   config: DowntimeConfig,
   window: DowntimeWindow,
   confirmed: boolean,
+  paused: boolean,
 ): string {
   const lines = [
     `## Downtime Policy`,
-    `Downtime is active (${window.label} local time).`,
+    paused
+      ? `Downtime is paused for this window (${window.label} local time).`
+      : `Downtime is active (${window.label} local time).`,
     confirmed
       ? "The user has already confirmed continuation for this window."
-      : "No continuation confirmation has been recorded for this window yet.",
+      : paused
+        ? "The user paused downtime for this window, so do not re-open the confirmation prompt automatically."
+        : "No continuation confirmation has been recorded for this window yet.",
     `If the user wants to keep working, require the exact confirmation command first: ${config.confirmCommand}`,
   ];
 
@@ -281,12 +298,17 @@ function buildSystemPrompt(
   config: DowntimeConfig,
   window: DowntimeWindow,
   confirmed: boolean,
+  paused: boolean,
 ): string {
   const lines = [
-    `Downtime is active for the current local window (${window.label}).`,
+    paused
+      ? `Downtime is paused for the current local window (${window.label}).`
+      : `Downtime is active for the current local window (${window.label}).`,
     confirmed
       ? "The user has already confirmed continuation for this window, so you may help them while still nudging them to rest."
-      : "Do not answer the user as if downtime is normal. A downtime overlay will ask the user whether to accept and continue work before tools run.",
+      : paused
+        ? "Downtime is paused for this window, so continue without prompting again until the next window."
+        : "Do not answer the user as if downtime is normal. A downtime overlay will ask the user whether to accept and continue work before tools run.",
     `Fallback confirmation command: ${config.confirmCommand}`,
   ];
 
@@ -302,7 +324,7 @@ function buildOverlayMessage(config: DowntimeConfig, window: DowntimeWindow): st
   return [
     `Downtime is active (${window.label} local time).`,
     configuredMessage || "This is a configured rest window.",
-    "Accept to continue this work session, or press Escape and go to bed.",
+    "Accept to continue this work session, or press Escape to pause downtime for the rest of this window.",
   ].join("\n\n");
 }
 
@@ -310,12 +332,15 @@ function buildStatusMessage(
   config: DowntimeConfig,
   window: DowntimeWindow,
   confirmed: boolean,
+  paused: boolean,
 ): string {
   return [
-    `Downtime ${window.active ? "active" : "inactive"} (${window.label}).`,
+    `Downtime ${window.active ? (paused ? "paused" : "active") : "inactive"} (${window.label}).`,
     confirmed
       ? "Continuation has been confirmed for this window."
-      : "Continuation has not been confirmed yet.",
+      : paused
+        ? "Downtime has been paused for the remainder of this window."
+        : "Continuation has not been confirmed yet.",
     `Confirmation command: ${config.confirmCommand}`,
   ].join("\n");
 }
@@ -329,10 +354,11 @@ function sendStatusMessage(
   config: DowntimeConfig,
   window: DowntimeWindow,
   confirmed: boolean,
+  paused = false,
 ): void {
   pi.sendMessage({
     customType: DOWNTIME_CUSTOM_TYPE,
-    content: buildStatusMessage(config, window, confirmed),
+    content: buildStatusMessage(config, window, confirmed, paused),
     display: true,
     details: {
       kind: "status",
@@ -400,8 +426,8 @@ class DowntimeOverlayDialog implements Component {
         : "[ Accept and continue ]";
     const escape =
       this.selected === 1
-        ? this.theme.fg("warning", "[ Escape and go to bed ]")
-        : "[ Escape and go to bed ]";
+        ? this.theme.fg("warning", "[ Escape and pause downtime ]")
+        : "[ Escape and pause downtime ]";
 
     lines.push(`+${"-".repeat(boxWidth - 2)}+`);
     push(title);
@@ -435,6 +461,7 @@ function confirmDowntimeWindow(
   persist: boolean,
 ): void {
   state.confirmedWindowKey = window.key;
+  state.pausedWindowKey = null;
   state.announcedWindowKey = window.key;
   state.wasActive = true;
   if (persist) {
@@ -444,6 +471,21 @@ function confirmDowntimeWindow(
     ctx.ui.notify("Downtime confirmed for this window.", "info");
   }
   updateFooterStatus(ctx, config, window, true);
+}
+
+function pauseDowntimeWindow(
+  ctx: ExtensionContext,
+  state: DowntimeState,
+  config: DowntimeConfig,
+  window: DowntimeWindow,
+): void {
+  state.pausedWindowKey = window.key;
+  state.announcedWindowKey = window.key;
+  state.wasActive = true;
+  updateFooterStatus(ctx, config, window, false, true);
+  if (ctx.hasUI) {
+    ctx.ui.notify("Downtime paused for this window.", "info");
+  }
 }
 
 async function requestDowntimeConfirmation(
@@ -481,8 +523,7 @@ async function requestDowntimeConfirmation(
         confirmDowntimeWindow(pi, ctx, state, config, window, true);
         return true;
       }
-      ctx.ui.notify("Downtime remains active. Work was not continued.", "warning");
-      updateFooterStatus(ctx, config, window, false);
+      pauseDowntimeWindow(ctx, state, config, window);
       return false;
     })
     .finally(() => {
@@ -528,6 +569,7 @@ function registerRenderer(pi: ExtensionAPI): void {
 export default function downtimeExtension(pi: ExtensionAPI): void {
   const state: DowntimeState = {
     confirmedWindowKey: null,
+    pausedWindowKey: null,
     announcedWindowKey: null,
     wasActive: false,
     pendingConfirmation: null,
@@ -545,12 +587,14 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
     const window = getWindow(new Date(), config);
     state.confirmedWindowKey = loadConfirmedState(ctx);
     if (!window.active) {
+      state.pausedWindowKey = null;
       state.announcedWindowKey = null;
       state.wasActive = false;
     }
-    const confirmed = state.confirmedWindowKey === window.key;
-    updateFooterStatus(ctx, config, window, confirmed);
-    if (window.active && !confirmed) {
+    const confirmed = isWindowConfirmed(state, window);
+    const paused = isWindowPaused(state, window);
+    updateFooterStatus(ctx, config, window, confirmed, paused);
+    if (window.active && !confirmed && !paused) {
       await requestDowntimeConfirmation(pi, ctx, state, config, window);
     }
   });
@@ -572,12 +616,16 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
     }
 
     if (!isConfirmationCommand(event.text, config.confirmCommand)) {
-      return { action: "continue" };
+      if (isWindowConfirmed(state, window) || isWindowPaused(state, window)) {
+        return { action: "continue" };
+      }
+
+      const accepted = await requestDowntimeConfirmation(pi, ctx, state, config, window);
+      return accepted ? { action: "continue" } : { action: "handled" };
     }
 
     confirmDowntimeWindow(pi, ctx, state, config, window, false);
-
-    return { action: "continue" };
+    return { action: "handled" };
   });
 
   pi.registerCommand("downtime", {
@@ -586,12 +634,13 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
       const config = loadDowntimeConfig(pi, ctx.cwd);
       const now = new Date();
       const window = getWindow(now, config);
-      const confirmed = state.confirmedWindowKey === window.key;
+      const confirmed = isWindowConfirmed(state, window);
+      const paused = isWindowPaused(state, window);
       const action = normalizeWhitespace(args).toLowerCase();
 
       if (!action || action === "status") {
-        sendStatusMessage(pi, config, window, confirmed);
-        updateFooterStatus(ctx, config, window, confirmed);
+        sendStatusMessage(pi, config, window, confirmed, paused);
+        updateFooterStatus(ctx, config, window, confirmed, paused);
         return;
       }
 
@@ -618,13 +667,15 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
     const config = loadDowntimeConfig(pi, ctx.cwd);
     const now = new Date();
     const window = getWindow(now, config);
-    let confirmed = state.confirmedWindowKey === window.key;
+    const confirmed = isWindowConfirmed(state, window);
+    const paused = isWindowPaused(state, window);
 
     if (!window.active) {
       updateFooterStatus(ctx, config, window, false);
 
       if (state.wasActive || state.announcedWindowKey) {
         state.confirmedWindowKey = null;
+        state.pausedWindowKey = null;
         state.announcedWindowKey = null;
         state.wasActive = false;
         if (ctx.hasUI) {
@@ -653,13 +704,21 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
       return;
     }
 
-    updateFooterStatus(ctx, config, window, confirmed);
+    updateFooterStatus(ctx, config, window, confirmed, paused);
 
-    if (!confirmed) {
-      confirmed = await requestDowntimeConfirmation(pi, ctx, state, config, window);
+    if (paused) {
+      state.wasActive = true;
+      return {
+        systemPrompt: `${_event.systemPrompt}\n\n## Downtime\n${buildSystemPrompt(config, window, confirmed, paused)}`,
+      };
     }
 
-    const systemPrompt = `${_event.systemPrompt}\n\n## Downtime\n${buildSystemPrompt(config, window, confirmed)}`;
+    if (!confirmed) {
+      const accepted = await requestDowntimeConfirmation(pi, ctx, state, config, window);
+      if (!accepted) return;
+    }
+
+    const systemPrompt = `${_event.systemPrompt}\n\n## Downtime\n${buildSystemPrompt(config, window, true, false)}`;
 
     if (state.announcedWindowKey !== window.key) {
       state.announcedWindowKey = window.key;
@@ -671,12 +730,12 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
         systemPrompt,
         message: {
           customType: DOWNTIME_CUSTOM_TYPE,
-          content: buildPolicyMessage(config, window, confirmed),
+          content: buildPolicyMessage(config, window, true, false),
           display: false,
           details: {
             kind: "policy",
             active: true,
-            confirmed,
+            confirmed: true,
             windowKey: window.key,
             windowLabel: window.label,
             confirmCommand: config.confirmCommand,
@@ -698,7 +757,7 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
     const window = getWindow(now, config);
     if (!window.active) return;
 
-    const confirmed = state.confirmedWindowKey === window.key;
+    const confirmed = isWindowConfirmed(state, window);
     if (confirmed) return;
 
     if (event.toolName === "bash") {

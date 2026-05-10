@@ -215,6 +215,36 @@ describe("downtime extension", () => {
 		expect(pi.appendEntry).not.toHaveBeenCalled();
 	});
 
+	it("pauses downtime after dismissal so later chat input is allowed", async () => {
+		const { homeDir, cwd } = makeProjectRoot();
+		writeFileSync(
+			join(cwd, ".pi", "extensions", "downtime.json"),
+			JSON.stringify({
+				time: "22:00",
+				durationMinutes: 480,
+			}),
+			"utf-8",
+		);
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2026, 3, 28, 22, 30, 0));
+
+		const { handlers } = await loadExtension({ cwd, homeDir });
+		const sessionStart = handlers.get("session_start");
+		const beforeAgentStart = handlers.get("before_agent_start");
+		const input = handlers.get("input");
+		const ctx = createCtx(cwd);
+		ctx.ui.custom.mockResolvedValue("escape");
+
+		await sessionStart?.({}, ctx);
+
+		expect(await input?.({ text: "hello there", source: "interactive" }, ctx)).toEqual({ action: "continue" });
+
+		const result = await beforeAgentStart?.({ systemPrompt: "base" }, ctx);
+		expect(result?.systemPrompt).toContain("Downtime is paused for the current local window");
+		expect(result?.systemPrompt).toContain("continue without prompting again until the next window");
+		expect(ctx.ui.custom).toHaveBeenCalledTimes(1);
+	});
+
 	it("accepts a confirmation typed as chat input before the next tool call", async () => {
 		const { homeDir, cwd } = makeProjectRoot();
 		writeFileSync(
@@ -274,13 +304,14 @@ describe("downtime extension", () => {
 		const sessionStart = handlers.get("session_start");
 		const beforeAgentStart = handlers.get("before_agent_start");
 		const ctx = createCtx(cwd);
+		ctx.ui.custom.mockResolvedValue("continue");
 
 		await sessionStart?.({}, ctx);
 
 		const result = await beforeAgentStart?.({ systemPrompt: "base" }, ctx);
 		expect(result?.systemPrompt).toContain("Downtime is active");
-		expect(result?.systemPrompt).toContain("A downtime overlay will ask the user");
-		expect(result?.systemPrompt).toContain("Do not answer the user as if downtime is normal");
+		expect(result?.systemPrompt).toContain("The user has already confirmed continuation");
+		expect(result?.systemPrompt).not.toContain("A downtime overlay will ask the user");
 	});
 
 	it("restores a prior confirmation from the session and renders status details", async () => {
