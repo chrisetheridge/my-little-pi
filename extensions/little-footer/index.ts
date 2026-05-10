@@ -214,7 +214,7 @@ function buildLine(
           secondary: quota.secondary,
         }
       : null;
-    const quotaSegment = renderQuota(theme, icons, quotaInput);
+    const quotaSegment = renderQuota(theme, quotaInput);
     if (quotaSegment) rightSegments.push(quotaSegment);
   }
 

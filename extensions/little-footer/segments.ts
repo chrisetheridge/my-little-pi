@@ -153,7 +153,6 @@ function renderQuotaWindow(theme: ThemeFn, window: QuotaWindowInput): string | n
 /** Render quota usage segment. Returns null if usage is unavailable. */
 export function renderQuota(
   theme: ThemeFn,
-  icons: IconSet,
   input: QuotaSegmentInput | null,
 ): string | null {
   if (!input) {
