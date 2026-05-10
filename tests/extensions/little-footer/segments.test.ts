@@ -17,7 +17,7 @@ const fakeTheme: ThemeFn = {
   fg: (role: ThemeColor, text: string) => `<${role}>${text}</${role}>`,
 };
 
-const icons = iconsFor(false);
+const icons = iconsFor();
 
 describe("renderModel", () => {
   it("returns null with undefined modelId", () => {
@@ -134,12 +134,6 @@ describe("renderGit", () => {
     const result = renderGit(fakeTheme, icons, "main", true);
     expect(result).toContain("<error>*</error>");
     expect(result).not.toContain("●");
-  });
-
-  it("renders dirty indicator when dirty (nerd)", () => {
-    const nerdIcons = iconsFor(true);
-    const result = renderGit(fakeTheme, nerdIcons, "main", true);
-    expect(result).toContain("<error>!</error>");
   });
 
   it("renders diff counts when dirty", () => {

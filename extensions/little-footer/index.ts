@@ -11,7 +11,7 @@ import type {
 } from "@mariozechner/pi-coding-agent";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { detectNerdFonts, iconsFor, type IconSet } from "./icons.ts";
+import { iconsFor, type IconSet } from "./icons.ts";
 import { createCodexQuotaTracker, type QuotaTracker } from "./codex-usage.ts";
 import {
   renderCost,
@@ -129,7 +129,9 @@ function collectUsage(ctx: ExtensionContext): UsageTotals {
 
     for (const entry of branch) {
       if (entry.type !== "message") continue;
-      const msg = entry.message as AgentMessage & { usage?: { input?: number; output?: number; cost?: { total?: number } } };
+      const msg = entry.message as AgentMessage & {
+        usage?: { input?: number; output?: number; cost?: { total?: number } };
+      };
       if (msg.role !== "assistant") continue;
 
       const usage = msg.usage;
@@ -144,15 +146,15 @@ function collectUsage(ctx: ExtensionContext): UsageTotals {
   return totals;
 }
 
-/** Return true when the active model is provided by OpenAI. */
-function isOpenAIModel(model: { id?: string; provider?: string } | undefined): boolean {
+/** Return true when the active model uses ChatGPT Codex subscription auth. */
+function isOpenAICodexModel(model: { id?: string; provider?: string } | undefined): boolean {
   if (!model) return false;
   const providerValue =
     model.provider ??
     (model.id && model.id.includes("/") ? model.id.slice(0, model.id.indexOf("/")) : undefined);
   if (!providerValue) return false;
   const provider = providerValue.toLowerCase();
-  return provider.startsWith("openai");
+  return provider === "openai-codex" || /^openai-codex-\d+$/.test(provider);
 }
 
 /** Build a single footer line. */
@@ -179,7 +181,9 @@ function buildLine(
   const gitDirty = isGitDirty(ctx.cwd);
   const gitDiff = gitDirty ? collectGitDiffStatsCached(ctx.cwd) : null;
 
-  const showQuotaUsage = isOpenAIModel(ctx.model as { id?: string; provider?: string } | undefined);
+  const showQuotaUsage = isOpenAICodexModel(
+    ctx.model as { id?: string; provider?: string } | undefined,
+  );
   quotaTracker.setEnabled(showQuotaUsage);
 
   // Build left segments
@@ -210,15 +214,15 @@ function buildLine(
           secondary: quota.secondary,
         }
       : null;
-    const quotaSegment = renderQuota(theme, icons, quotaInput);
+    const quotaSegment = renderQuota(theme, quotaInput);
     if (quotaSegment) rightSegments.push(quotaSegment);
   }
 
   // Extension statuses from footerData
   try {
     const statuses = footerData.getExtensionStatuses();
-    for (const [key, value] of statuses) {
-      if (value && value.trim()) {
+    for (const [, value] of statuses) {
+      if (value?.trim()) {
         rightSegments.push(renderExtensionStatus(theme, value));
       }
     }
@@ -256,13 +260,9 @@ function buildLine(
 }
 
 /** Activate the footer for the given context. */
-function activateFooter(
-  ctx: ExtensionContext,
-  pi: ExtensionAPI,
-  icons: IconSet,
-): void {
+function activateFooter(ctx: ExtensionContext, pi: ExtensionAPI, icons: IconSet): void {
   let invalidateRef: (() => void) | undefined;
-  const quotaTracker = createCodexQuotaTracker(() => {
+  const quotaTracker = createCodexQuotaTracker(ctx, () => {
     invalidateRef?.();
   });
 
@@ -287,13 +287,10 @@ function activateFooter(
 
 /** Default export - the extension factory. */
 export default function littleFooterExtension(pi: ExtensionAPI): void {
-  const useNerd = detectNerdFonts();
-  const icons = iconsFor(useNerd);
+  const icons = iconsFor();
   let enabled = true;
-  let activeCtx: ExtensionContext | undefined;
 
   pi.on("session_start", (_event, ctx) => {
-    activeCtx = ctx;
     if (enabled) {
       activateFooter(ctx, pi, icons);
     }
@@ -311,13 +308,11 @@ export default function littleFooterExtension(pi: ExtensionAPI): void {
     },
     handler: async (args: string, ctx: ExtensionContext) => {
       const sub = args.trim().toLowerCase() || "status";
-      const iconMode = useNerd ? "nerd icons" : "ascii icons";
 
       if (sub === "status") {
-        ctx.ui.notify(`little-footer: ${enabled ? "on" : "off"} (${iconMode})`, "info");
+        ctx.ui.notify(`little-footer: ${enabled ? "on" : "off"} (ascii icons)`, "info");
       } else if (sub === "on") {
         enabled = true;
-        activeCtx = ctx;
         activateFooter(ctx, pi, icons);
         ctx.ui.notify("little-footer: on", "info");
       } else if (sub === "off") {
