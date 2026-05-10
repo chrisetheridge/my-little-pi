@@ -172,7 +172,7 @@ export function renderQuota(
 
   const label = input.limitName?.trim() || "OpenAI";
   const separator = ` ${theme.fg("muted", "·")} `;
-  return `${theme.fg("accent", icons.context)} ${theme.fg("text", label)} ${renderedWindows.join(separator)}`;
+  return `${theme.fg("text", label)} ${renderedWindows.join(separator)}`;
 }
 
 /** Render extension status segment. */

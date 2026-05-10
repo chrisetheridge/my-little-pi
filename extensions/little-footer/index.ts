@@ -222,7 +222,7 @@ function buildLine(
   try {
     const statuses = footerData.getExtensionStatuses();
     for (const [, value] of statuses) {
-      if (value && value.trim()) {
+      if (value?.trim()) {
         rightSegments.push(renderExtensionStatus(theme, value));
       }
     }

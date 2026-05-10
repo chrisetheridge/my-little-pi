@@ -10,7 +10,6 @@ export interface IconSet {
   dirty: string;
   tokens: string;
   cost: string;
-  context: string;
   time: string;
   separator: string;
 }
@@ -23,7 +22,6 @@ const ICONS: IconSet = {
   dirty: "*",
   tokens: "tok",
   cost: "",
-  context: "ctx",
   time: "tm",
   separator: "|",
 };
