@@ -2,27 +2,12 @@
 
 Personal package for [Pi](https://pi.dev) extensions, skills, prompt templates, and themes.
 
-Pi packages are regular npm or git packages that expose resources through the `pi` field in `package.json`.
-For git installs, Pi clones the repository, runs `npm install` when `package.json` is present, then loads the declared resources. Pi core packages imported by extensions are listed as peer dependencies.
-
 ## Contents
 
 - `extensions/` - TypeScript or JavaScript Pi extensions.
 - `skills/` - Agent Skills packages, each with a `SKILL.md`.
 - `prompts/` - Markdown prompt templates available as slash commands.
 - `themes/` - JSON themes for Pi's terminal UI.
-
-## Install Pi
-
-```bash
-npm install -g @mariozechner/pi-coding-agent
-```
-
-Start Pi with:
-
-```bash
-pi
-```
 
 ## Install This Package
 
@@ -38,12 +23,6 @@ From git:
 
 ```bash
 pi install git:github.com/chrisetheridge/my-little-pi
-```
-
-From npm if published later:
-
-```bash
-pi install npm:my-little-pi
 ```
 
 ## Try Without Installing
@@ -70,12 +49,14 @@ pi -e ./
 
 ### `session-changes`
 
-Shows a small "Changed this session" widget above the editor while Pi is running.
+![session changes example](docs/images/session-changes.png)
+
+Shows a small "changes" widget above the editor while Pi is running.
 It tracks successful `edit` and `write` tool results, then displays the most recently changed files with approximate `+added` / `-deleted` line counts and repeat-touch counts.
 
-On session start it rebuilds the widget from the current session branch, so resumed sessions still show files changed earlier in that branch.
-
 ### `startup-screen`
+
+![startup screen](docs/images/startup-screen.png)
 
 Replaces Pi's default startup header with a recent-session launcher.
 It lists the last 10 sessions across all projects with:
@@ -86,6 +67,52 @@ It lists the last 10 sessions across all projects with:
 
 When the editor is empty, use `↑` / `↓` to move through the list and `Enter` to load the selected session.
 Typing normally ignores the launcher. You can also run `/recent` to open an interactive picker, or `/recent <index>` to load a numbered recent session directly.
+
+### `little-footer`
+
+![footer example](docs/images/footer.png)
+
+Adds a custom minimal footer, including OpenAI usage window tracking and git status.
+
+### `little-renderer`
+
+![little renderer example](docs/images/little-renderer.png)
+
+Replaces Pi's default message/tool rendering with a denser, quieter layout.
+Assistant prose is rendered as dotted paragraphs (`●`), thinking blocks are dim/italic and marked with `✽`, and smaller Markdown headings are flattened so long sessions scan more like a readable transcript than a stack of cards.
+
+It also re-registers the built-in file and shell tools with compact call/result renderers:
+
+- `read`, `grep`, `find`, `ls`, `write`, and `edit` show one-line headers with the target path or search pattern.
+- `bash` shows the command, timeout when present, and a short done/exit summary.
+- Running tools blink while pending, then settle to success/error dots.
+- Collapsed results show counts and status; expanded results show previews or, for `edit`, the rendered diff and `+added` / `-deleted` counts.
+
+### `downtime`
+
+![downtime example](docs/images/downtime.png)
+
+Adds a configurable rest-window guard for late-night sessions. During the active window it shows a footer status, injects a small downtime policy into the agent context, and prompts with an overlay before agent/tool work continues. Accepting the overlay confirms continuation for the current downtime window; pressing Escape blocks tool execution and nudges you to stop.
+
+Defaults:
+
+```json
+{
+  "time": "22:00",
+  "durationMinutes": 480,
+  "confirmCommand": "echo continue-downtime",
+  "message": "Downtime is active. Pause work unless you intentionally continue with the confirmation command.",
+  "statusLabel": "downtime"
+}
+```
+
+Configuration is loaded from `~/.pi/agent/extensions/downtime.json`, then overridden by project-local `.pi/extensions/downtime.json`. You can also override just the start time for a run with Pi's `downtime` flag in `HH:MM` local time format.
+
+Useful commands:
+
+- `/downtime` or `/downtime status` shows the current window, confirmation state, command, and config source.
+- `/downtime confirm` confirms continuation for the active window.
+- Running the configured confirmation command in `bash` also confirms the window.
 
 ## Develop
 
