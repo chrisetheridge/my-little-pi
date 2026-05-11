@@ -30,7 +30,7 @@ Use this skill for issue-driven engineering work where the desired output is not
    - trace the smallest relevant data flow from entry point to behavior
 5. Write down the issue in one sentence and the likely affected surfaces.
 
-IMPORATNT: Do not edit ANY files yet. You must NOT work on the issue until presenting your findings and approach.
+IMPORTANT: Do not edit ANY files yet. You must NOT work on the issue until presenting your findings and approach.
 
 ### Linear Context Sources
 

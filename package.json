@@ -1,25 +1,24 @@
 {
   "name": "my-little-pi",
   "version": "0.1.0",
-  "description": "Personal Pi package for extensions, skills, prompts, and themes.",
+  "description": "Personal Pi package for extensions, skills, and themes.",
   "type": "module",
   "private": true,
   "keywords": [
     "pi-package",
     "pi-extension",
     "pi-skill",
-    "pi-prompt",
     "pi-theme"
   ],
   "scripts": {
     "check": "tsc --noEmit",
     "test": "vitest run",
-    "pack:dry-run": "npm pack --dry-run"
+    "pack:dry-run": "npm pack --dry-run",
+    "ci": "pnpm run check && pnpm run test && pnpm run pack:dry-run"
   },
   "files": [
     "extensions",
     "skills",
-    "prompts",
     "themes",
     "README.md"
   ],
@@ -36,9 +35,6 @@
     ],
     "skills": [
       "./skills"
-    ],
-    "prompts": [
-      "./prompts"
     ],
     "themes": [
       "./themes"

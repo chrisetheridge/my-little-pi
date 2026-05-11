@@ -1,12 +1,11 @@
 # my-little-pi
 
-Personal package for [Pi](https://pi.dev) extensions, skills, prompt templates, and themes.
+Personal package for [Pi](https://pi.dev) extensions, skills, and themes.
 
 ## Contents
 
 - `extensions/` - TypeScript or JavaScript Pi extensions.
 - `skills/` - Agent Skills packages, each with a `SKILL.md`.
-- `prompts/` - Markdown prompt templates available as slash commands.
 - `themes/` - JSON themes for Pi's terminal UI.
 
 ## Install This Package
@@ -33,9 +32,7 @@ pi -e ./
 
 ## Use
 
-- Run `/review-staged` to expand the staged-code-review prompt template.
-- Run `/debug-issue <description>` to expand the debugging prompt template.
-- Run `/skill:pi-package-maintainer` when changing this package.
+- Use the packaged extensions described below after installing or running this package with `pi -e ./`.
 - Select the `my-little-pi` theme in `/settings`, or set it manually:
 
 ```json
@@ -118,14 +115,21 @@ Useful commands:
 Install dependencies for editor types and local checks:
 
 ```bash
-npm install
+pnpm install
 ```
 
 Run checks:
 
 ```bash
-npm run check
-npm run pack:dry-run
+pnpm run check
+pnpm run test
+pnpm run pack:dry-run
+```
+
+Run the standard full verification sequence:
+
+```bash
+pnpm run ci
 ```
 
 Reload Pi resources after edits:
@@ -154,7 +158,6 @@ Themes hot-reload when the active theme file changes.
       "./extensions/startup-screen/index.ts"
     ],
     "skills": ["./skills"],
-    "prompts": ["./prompts"],
     "themes": ["./themes"]
   }
 }
@@ -165,5 +168,4 @@ Themes hot-reload when the active theme file changes.
 - [Pi packages](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/packages.md)
 - [Pi extensions](https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/docs/extensions.md)
 - [Pi skills](https://contextqmd.com/libraries/pi-mono/versions/0.61.0/pages/packages/coding-agent/docs/skills)
-- [Pi prompt templates](https://mintlify.wiki/badlogic/pi-mono/coding-agent/prompt-templates)
 - [Pi themes](https://mintlify.wiki/badlogic/pi-mono/coding-agent/themes)
