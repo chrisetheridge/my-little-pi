@@ -140,7 +140,7 @@ class StartupHeader implements Component {
     });
 
     lines.push(
-      this.theme.fg("dim", "↑↓ choose • enter load • /recent opens picker"),
+      this.theme.fg("dim", "shift + j / k choose • enter load • /recent opens picker"),
     );
     return lines;
   }
@@ -150,13 +150,13 @@ class StartupHeader implements Component {
     if (this.ctx.ui.getEditorText().trim().length > 0) return undefined;
     if (isKeyRelease(data)) return { consume: true };
 
-    if (matchesKey(data, Key.up)) {
+    if (matchesKey(data, Key.shift("k"))) {
       this.state.selected = clamp(this.state.selected - 1, 0, this.state.rows.length - 1);
       this.tui.requestRender();
       return { consume: true };
     }
 
-    if (matchesKey(data, Key.down)) {
+    if (matchesKey(data, Key.shift("j"))) {
       this.state.selected = clamp(this.state.selected + 1, 0, this.state.rows.length - 1);
       this.tui.requestRender();
       return { consume: true };
