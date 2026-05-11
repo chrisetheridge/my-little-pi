@@ -64,7 +64,7 @@ describe("FocusedIssueController", () => {
 		expect(persisted).toHaveLength(2);
 	});
 
-	it("reports unsupported references without fetching", () => {
+	it("ignores unsupported references without fetching", () => {
 		const provider = makeProvider(Promise.resolve({ ok: true, issue: makeIssue() }));
 		const controller = new FocusedIssueController({ providers: [provider] });
 
@@ -72,12 +72,13 @@ describe("FocusedIssueController", () => {
 
 		expect(provider.fetchIssue).not.toHaveBeenCalled();
 		expect(controller.getState()).toMatchObject({
-			status: "error",
-			error: { code: "unsupported" },
+			status: "idle",
+			reference: null,
+			error: null,
 		});
 	});
 
-	it("cancels in-flight fetches when focus changes", () => {
+	it("keeps previous fetch signals active when focus changes", () => {
 		const pending = deferred<IssueProviderResult>();
 		const signals: AbortSignal[] = [];
 		const provider: IssueProvider = {
@@ -94,7 +95,7 @@ describe("FocusedIssueController", () => {
 		controller.setFocus("ENG-123");
 		controller.setFocus("PLAT-987");
 
-		expect(signals[0]?.aborted).toBe(true);
+		expect(signals[0]?.aborted).toBe(false);
 		expect(signals[1]?.aborted).toBe(false);
 	});
 
