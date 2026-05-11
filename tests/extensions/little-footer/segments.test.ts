@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
 import { iconsFor } from "../../../extensions/little-footer/icons.ts";
 import {
@@ -184,12 +184,12 @@ describe("renderCost", () => {
 
 describe("renderQuota", () => {
   it("returns null with null input", () => {
-    expect(renderQuota(fakeTheme, icons, null)).toBeNull();
+    expect(renderQuota(fakeTheme, null)).toBeNull();
   });
 
   it("returns null with no windows", () => {
     expect(
-      renderQuota(fakeTheme, icons, {
+      renderQuota(fakeTheme, {
         limitId: "codex",
         limitName: "OpenAI",
         primary: null,
@@ -199,7 +199,7 @@ describe("renderQuota", () => {
   });
 
   it("uses dim color below 70%", () => {
-    const result = renderQuota(fakeTheme, icons, {
+    const result = renderQuota(fakeTheme, {
       limitId: "codex",
       limitName: "OpenAI",
       primary: {
@@ -216,7 +216,7 @@ describe("renderQuota", () => {
   });
 
   it("uses warning color at 70%", () => {
-    const result = renderQuota(fakeTheme, icons, {
+    const result = renderQuota(fakeTheme, {
       limitId: "codex",
       limitName: "OpenAI",
       primary: {
@@ -232,7 +232,7 @@ describe("renderQuota", () => {
   });
 
   it("uses error color at 90%", () => {
-    const result = renderQuota(fakeTheme, icons, {
+    const result = renderQuota(fakeTheme, {
       limitId: "codex",
       limitName: "OpenAI",
       primary: {
@@ -249,7 +249,7 @@ describe("renderQuota", () => {
   });
 
   it("renders both windows when available", () => {
-    const result = renderQuota(fakeTheme, icons, {
+    const result = renderQuota(fakeTheme, {
       limitId: "codex",
       limitName: "OpenAI",
       primary: {
@@ -268,6 +268,87 @@ describe("renderQuota", () => {
     expect(result).toContain("50%");
     expect(result).toContain("1w");
     expect(result).toContain("90%");
+  });
+
+  it("renders same-day reset time without date", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 11, 9, 30));
+    try {
+      const result = renderQuota(fakeTheme, {
+        limitId: "codex",
+        limitName: "OpenAI",
+        primary: {
+          usedPercent: 57,
+          windowDurationMins: 300,
+          resetsAt: new Date(2026, 4, 11, 19, 1).getTime(),
+        },
+        secondary: null,
+      });
+
+      expect(result).toContain("5h");
+      expect(result).toContain("43%");
+      expect(result).toContain("(19:01)");
+      expect(result).not.toContain("11 May");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("renders future reset time with date", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 4, 11, 9, 30));
+    try {
+      const result = renderQuota(fakeTheme, {
+        limitId: "codex",
+        limitName: "OpenAI",
+        primary: {
+          usedPercent: 53,
+          windowDurationMins: 10080,
+          resetsAt: new Date(2026, 4, 15, 10, 5).getTime(),
+        },
+        secondary: null,
+      });
+
+      expect(result).toContain("1w");
+      expect(result).toContain("47%");
+      expect(result).toContain("(15 May 10:05)");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("omits reset time when reset timestamp is missing", () => {
+    const result = renderQuota(fakeTheme, {
+      limitId: "codex",
+      limitName: "OpenAI",
+      primary: {
+        usedPercent: 57,
+        windowDurationMins: 300,
+        resetsAt: null,
+      },
+      secondary: null,
+    });
+
+    expect(result).toContain("5h");
+    expect(result).toContain("43%");
+    expect(result).not.toContain("(");
+  });
+
+  it("omits reset time when reset timestamp is non-finite", () => {
+    const result = renderQuota(fakeTheme, {
+      limitId: "codex",
+      limitName: "OpenAI",
+      primary: {
+        usedPercent: 57,
+        windowDurationMins: 300,
+        resetsAt: Number.POSITIVE_INFINITY,
+      },
+      secondary: null,
+    });
+
+    expect(result).toContain("5h");
+    expect(result).toContain("43%");
+    expect(result).not.toContain("(");
   });
 });
 

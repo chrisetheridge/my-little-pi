@@ -50,6 +50,8 @@ const THINKING_COLORS: Record<string, ThemeColor> = {
   xhigh: "error",
 };
 
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
 /** Render model segment. Returns null if modelId is empty/undefined. */
 export function renderModel(theme: ThemeFn, modelId: string | undefined): string | null {
   if (!modelId) return null;
@@ -137,17 +139,40 @@ function formatPercentCompact(value: number): string {
   return `${rounded}%`;
 }
 
+function formatQuotaResetTime(resetsAt: number | null): string | null {
+  if (resetsAt === null || !Number.isFinite(resetsAt)) return null;
+
+  const reset = new Date(resetsAt);
+  if (!Number.isFinite(reset.getTime())) return null;
+
+  const now = new Date();
+  const hours = String(reset.getHours()).padStart(2, "0");
+  const minutes = String(reset.getMinutes()).padStart(2, "0");
+  const time = `${hours}:${minutes}`;
+  const isToday =
+    reset.getFullYear() === now.getFullYear() &&
+    reset.getMonth() === now.getMonth() &&
+    reset.getDate() === now.getDate();
+
+  if (isToday) return `(${time})`;
+
+  const month = MONTH_LABELS[reset.getMonth()];
+  return `(${reset.getDate()} ${month} ${time})`;
+}
+
 function renderQuotaWindow(theme: ThemeFn, window: QuotaWindowInput): string | null {
   if (!Number.isFinite(window.usedPercent)) return null;
   const availablePercent = Math.max(0, 100 - window.usedPercent);
   const color = window.usedPercent >= 90 ? "error" : window.usedPercent >= 70 ? "warning" : "dim";
   const label = formatWindowDuration(window.windowDurationMins);
   const percentText = `${formatPercentCompact(availablePercent)}`;
+  const resetText = formatQuotaResetTime(window.resetsAt);
+  const usageText = resetText ? `${percentText} ${resetText}` : percentText;
 
   if (label) {
-    return `${theme.fg(color, label)} ${theme.fg(color, percentText)}`;
+    return `${theme.fg(color, label)} ${theme.fg(color, usageText)}`;
   }
-  return theme.fg(color, percentText);
+  return theme.fg(color, usageText);
 }
 
 /** Render quota usage segment. Returns null if usage is unavailable. */
