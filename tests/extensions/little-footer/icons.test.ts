@@ -13,7 +13,6 @@ describe("iconsFor", () => {
       "dirty",
       "tokens",
       "cost",
-      "context",
       "time",
       "separator",
     ];
