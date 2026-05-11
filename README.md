@@ -33,7 +33,6 @@ pi -e ./
 
 ## Use
 
-- File hooks now live in the sibling [pi-file-hooks](../pi-file-hooks) project.
 - Run `/review-staged` to expand the staged-code-review prompt template.
 - Run `/debug-issue <description>` to expand the debugging prompt template.
 - Run `/skill:pi-package-maintainer` when changing this package.

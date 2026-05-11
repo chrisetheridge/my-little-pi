@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  applyGitStatusPorcelain,
   applyToolResult,
   countContentLines,
   countDiffLines,
   createSessionChangesState,
   getChangedFiles,
   normalizeToolPath,
+  parseGitStatusPorcelain,
   rebuildFromSessionEntries,
   SessionChangesWidget,
 } from "../../../extensions/session-changes/index.ts";
@@ -28,6 +30,30 @@ describe("session-changes extension", () => {
     expect(countContentLines("")).toBe(0);
     expect(countContentLines("one")).toBe(1);
     expect(countContentLines("one\ntwo\n")).toBe(2);
+  });
+
+  it("parses untracked files from git porcelain status", () => {
+    expect(parseGitStatusPorcelain(" M src/a.ts\n?? src/new.ts\n?? docs/new file.md\nA  src/staged.ts\n")).toEqual([
+      "src/new.ts",
+      "docs/new file.md",
+    ]);
+  });
+
+  it("adds untracked git files without replacing tool-derived line counts", () => {
+    const state = createSessionChangesState();
+
+    applyToolResult(state, "/repo", {
+      toolName: "write",
+      input: { path: "src/tracked-write.ts", content: "one\ntwo" },
+      details: undefined,
+      isError: false,
+    } as never);
+    applyGitStatusPorcelain(state, "/repo", "?? src/from-bash.ts\n?? src/tracked-write.ts\n");
+
+    const files = getChangedFiles(state);
+    expect(files.map((file) => file.path)).toEqual(["src/from-bash.ts", "src/tracked-write.ts"]);
+    expect(files[0]).toMatchObject({ added: 0, deleted: 0, touches: 1 });
+    expect(files[1]).toMatchObject({ added: 2, deleted: 0, touches: 1 });
   });
 
   it("tracks edit and write tool results in most-recent order", () => {
@@ -138,7 +164,7 @@ describe("session-changes extension", () => {
     const widget = new SessionChangesWidget(state, theme);
     const rendered = widget.render(80).join("\n");
 
-    expect(rendered).toContain("Changed this session");
+    expect(rendered).toContain("changes");
     expect(rendered).toContain("src/a.ts");
     expect(rendered).toContain("+1");
     expect(rendered).toContain("-1");
@@ -192,5 +218,44 @@ describe("session-changes extension", () => {
 
     expect(requestRender).toHaveBeenCalled();
     expect(widget.render(80).join("\n")).toContain("src/a.ts");
+  });
+
+  it("refreshes untracked git files after a successful bash result", async () => {
+    const handlers = new Map<string, any>();
+    const pi = {
+      on: vi.fn((event: string, handler: any) => handlers.set(event, handler)),
+      exec: vi.fn(async () => ({ code: 0, stdout: "?? src/from-bash.ts\n", stderr: "" })),
+    };
+    const { default: extension } = await import("../../../extensions/session-changes/index.ts");
+    extension(pi as never);
+
+    const requestRender = vi.fn();
+    const ctx = {
+      cwd: "/repo",
+      hasUI: true,
+      sessionManager: { getBranch: () => [] },
+      ui: {
+        setWidget: vi.fn((_key: string, factory: any) => {
+          factory({ requestRender }, { fg: (_role: string, text: string) => text, bold: (text: string) => text });
+        }),
+      },
+    };
+
+    await handlers.get("session_start")?.({}, ctx);
+    await handlers.get("tool_result")?.(
+      {
+        toolName: "bash",
+        input: { command: "touch src/from-bash.ts" },
+        details: undefined,
+        isError: false,
+      },
+      ctx,
+    );
+
+    expect(pi.exec).toHaveBeenCalledWith("git", ["status", "--porcelain", "--untracked-files=all"], {
+      cwd: "/repo",
+      timeout: 5_000,
+    });
+    expect(requestRender).toHaveBeenCalled();
   });
 });

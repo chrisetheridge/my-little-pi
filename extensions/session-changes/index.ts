@@ -6,7 +6,7 @@ import { truncateToWidth } from "@mariozechner/pi-tui";
 const WIDGET_KEY = "session-changes";
 const MAX_VISIBLE_FILES = 6;
 
-type ChangeKind = "edit" | "write";
+type ChangeKind = "edit" | "write" | "untracked";
 
 export interface ChangedFile {
   path: string;
@@ -87,6 +87,57 @@ export function applyChange(state: SessionChangesState, change: ChangeRecord): v
 
 export function getChangedFiles(state: SessionChangesState): ChangedFile[] {
   return [...state.files.values()].sort((a, b) => b.lastTouched - a.lastTouched);
+}
+
+export function parseGitStatusPorcelain(status: string): string[] {
+  const paths: string[] = [];
+
+  for (const line of status.split("\n")) {
+    if (!line.startsWith("?? ")) continue;
+    const filePath = line.slice(3).trim();
+    if (filePath.length > 0) paths.push(filePath);
+  }
+
+  return paths;
+}
+
+export function applyGitStatusPorcelain(
+  state: SessionChangesState,
+  cwd: string,
+  status: string,
+): boolean {
+  let changed = false;
+
+  for (const rawPath of parseGitStatusPorcelain(status)) {
+    const normalized = normalizeToolPath(cwd, rawPath);
+    if (!normalized || state.files.has(normalized)) continue;
+    applyChange(state, {
+      path: normalized,
+      added: 0,
+      deleted: 0,
+      kind: "untracked",
+    });
+    changed = true;
+  }
+
+  return changed;
+}
+
+async function refreshGitStatus(
+  pi: ExtensionAPI,
+  state: SessionChangesState,
+  cwd: string,
+): Promise<boolean> {
+  try {
+    const result = await pi.exec("git", ["status", "--porcelain", "--untracked-files=all"], {
+      cwd,
+      timeout: 5_000,
+    });
+    if (result.code !== 0) return false;
+    return applyGitStatusPorcelain(state, cwd, result.stdout);
+  } catch {
+    return false;
+  }
 }
 
 function extractChangeRecord(source: {
@@ -255,6 +306,7 @@ export default function sessionChangesExtension(pi: ExtensionAPI): void {
 
   pi.on("session_start", async (_event, ctx) => {
     rebuildFromSessionEntries(state, ctx.cwd, ctx.sessionManager.getBranch());
+    await refreshGitStatus(pi, state, ctx.cwd);
     if (!ctx.hasUI) return;
 
     ctx.ui.setWidget(WIDGET_KEY, (tui, theme) => {
@@ -266,7 +318,10 @@ export default function sessionChangesExtension(pi: ExtensionAPI): void {
   });
 
   pi.on("tool_result", async (event, ctx) => {
-    if (applyToolResult(state, ctx.cwd, event)) refresh();
+    const toolChanged = applyToolResult(state, ctx.cwd, event);
+    const shouldCheckGit = event.isError !== true && ["bash", "edit", "write"].includes(event.toolName);
+    const gitChanged = shouldCheckGit ? await refreshGitStatus(pi, state, ctx.cwd) : false;
+    if (toolChanged || gitChanged) refresh();
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
