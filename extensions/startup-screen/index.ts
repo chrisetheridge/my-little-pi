@@ -2,6 +2,7 @@ import {
   SessionManager,
   VERSION,
   type ExtensionAPI,
+  type ExtensionCommandContext,
   type ExtensionContext,
   type SessionInfo,
   type Theme,
@@ -140,7 +141,7 @@ class StartupHeader implements Component {
     });
 
     lines.push(
-      this.theme.fg("dim", "shift + j / k choose • enter load • /recent opens picker"),
+      this.theme.fg("dim", "shift + j / k choose • ctrl + enter load • /recent opens picker"),
     );
     return lines;
   }
@@ -162,15 +163,22 @@ class StartupHeader implements Component {
       return { consume: true };
     }
 
-    if (matchesKey(data, Key.enter)) {
+    if (matchesKey(data, Key.ctrl("enter"))) {
       this.ctx.ui.setEditorText(`/recent ${this.state.selected}`);
-      return { data };
+      return { data: "\r" };
     }
   }
 }
 
 export default function (pi: ExtensionAPI) {
   let state: RecentSessionsState = { rows: [], selected: 0 };
+
+  pi.registerCommand("recent", {
+    description: "Resume a recent session from the startup screen",
+    handler: async (args, ctx) => {
+      await resumeRecentSession(args, ctx, state);
+    },
+  });
 
   pi.on("session_start", async (_event, ctx) => {
     if (!ctx.hasUI) return;
@@ -183,6 +191,35 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setHeader((tui, theme) => new StartupHeader(tui, ctx, { rows: [], selected: 0 }, theme, message));
     }
   });
+}
+
+async function resumeRecentSession(
+  args: string,
+  ctx: ExtensionCommandContext,
+  state: RecentSessionsState,
+): Promise<void> {
+  const rows = state.rows.length > 0 ? state.rows : await loadRows();
+  if (rows.length === 0) {
+    ctx.ui.notify("No previous sessions found.", "warning");
+    return;
+  }
+
+  const trimmed = args.trim();
+  const selected = trimmed.length > 0 ? Number.parseInt(trimmed, 10) : await selectRecentSession(ctx, rows);
+  const row = selected !== undefined && Number.isInteger(selected) ? rows[selected] : undefined;
+
+  if (!row) {
+    ctx.ui.notify("Recent session not found.", "warning");
+    return;
+  }
+
+  await ctx.switchSession(row.path);
+}
+
+async function selectRecentSession(ctx: ExtensionCommandContext, rows: RecentSessionRow[]): Promise<number | undefined> {
+  const options = rows.map((row, index) => `${index}: ${row.date}  ${row.repo}  ${row.title || row.cwd}`);
+  const selected = await ctx.ui.select("Recent sessions", options);
+  return selected === undefined ? undefined : options.indexOf(selected);
 }
 
 function getPiMascot(theme: Theme): string[] {

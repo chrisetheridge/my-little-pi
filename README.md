@@ -94,6 +94,7 @@ Defaults:
 
 ```json
 {
+  "enabled": false,
   "time": "22:00",
   "durationMinutes": 480,
   "confirmCommand": "echo continue-downtime",
@@ -103,6 +104,7 @@ Defaults:
 ```
 
 Configuration is loaded from `~/.pi/agent/extensions/downtime.json`, then overridden by project-local `.pi/extensions/downtime.json`. You can also override just the start time for a run with Pi's `downtime` flag in `HH:MM` local time format.
+Set `enabled` to `true` to enable downtime prompts, assistant instructions, footer status, and tool blocking.
 
 Useful commands:
 

@@ -130,6 +130,7 @@ describe("downtime extension", () => {
 		writeFileSync(
 			join(cwd, ".pi", "extensions", "downtime.json"),
 			JSON.stringify({
+				enabled: true,
 				time: "22:00",
 				durationMinutes: 480,
 				confirmCommand: "echo continue-downtime",
@@ -179,11 +180,62 @@ describe("downtime extension", () => {
 		expect(afterConfirm).toBeUndefined();
 	});
 
+	it("does not prompt, inject instructions, or block tools by default", async () => {
+		const { homeDir, cwd } = makeProjectRoot();
+		writeFileSync(
+			join(cwd, ".pi", "extensions", "downtime.json"),
+			JSON.stringify({
+				time: "22:00",
+				durationMinutes: 480,
+			}),
+			"utf-8",
+		);
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2026, 3, 28, 22, 30, 0));
+
+		const { commands, handlers, pi } = await loadExtension({ cwd, homeDir });
+		const sessionStart = handlers.get("session_start");
+		const beforeAgentStart = handlers.get("before_agent_start");
+		const input = handlers.get("input");
+		const toolCall = handlers.get("tool_call");
+		const ctx = createCtx(cwd);
+
+		await sessionStart?.({}, ctx);
+
+		expect(ctx.ui.custom).not.toHaveBeenCalled();
+		expect(ctx.ui.setStatus).toHaveBeenCalledWith("downtime", undefined);
+		expect(await input?.({ text: "hello", source: "interactive" }, ctx)).toEqual({
+			action: "continue",
+		});
+		expect(await beforeAgentStart?.({ systemPrompt: "base" }, ctx)).toBeUndefined();
+		expect(
+			await toolCall?.(
+				{
+					toolName: "read",
+					input: { path: "README.md" },
+				},
+				ctx,
+			),
+		).toBeUndefined();
+
+		await commands.get("downtime")?.handler("status", ctx);
+
+		expect(pi.sendMessage).toHaveBeenCalledWith(
+			expect.objectContaining({
+				content: expect.stringContaining("Downtime disabled"),
+				details: expect.objectContaining({
+					enabled: false,
+				}),
+			}),
+		);
+	});
+
 	it("blocks the pending tool when the downtime overlay is dismissed", async () => {
 		const { homeDir, cwd } = makeProjectRoot();
 		writeFileSync(
 			join(cwd, ".pi", "extensions", "downtime.json"),
 			JSON.stringify({
+				enabled: true,
 				time: "22:00",
 				durationMinutes: 480,
 			}),
@@ -220,6 +272,7 @@ describe("downtime extension", () => {
 		writeFileSync(
 			join(cwd, ".pi", "extensions", "downtime.json"),
 			JSON.stringify({
+				enabled: true,
 				time: "22:00",
 				durationMinutes: 480,
 			}),
@@ -250,6 +303,7 @@ describe("downtime extension", () => {
 		writeFileSync(
 			join(cwd, ".pi", "extensions", "downtime.json"),
 			JSON.stringify({
+				enabled: true,
 				time: "22:00",
 				durationMinutes: 480,
 				confirmCommand: "echo continue-downtime",
@@ -291,6 +345,7 @@ describe("downtime extension", () => {
 		writeFileSync(
 			join(cwd, ".pi", "extensions", "downtime.json"),
 			JSON.stringify({
+				enabled: true,
 				time: "22:00",
 				durationMinutes: 480,
 				confirmCommand: "echo continue-downtime",
@@ -319,6 +374,7 @@ describe("downtime extension", () => {
 		writeFileSync(
 			join(cwd, ".pi", "extensions", "downtime.json"),
 			JSON.stringify({
+				enabled: true,
 				time: "22:00",
 				durationMinutes: 480,
 			}),
