@@ -18,6 +18,7 @@ Example `.pi/extensions/downtime.json`:
 
 ```json
 {
+  "enabled": true,
   "time": "22:00",
   "durationMinutes": 480,
   "confirmCommand": "echo continue-downtime",
@@ -28,6 +29,7 @@ Example `.pi/extensions/downtime.json`:
 
 ## Fields
 
+- `enabled`: defaults to `false`; set to `true` to enable prompts, prompt injection, footer status, and tool blocking
 - `time`: start time in `HH:MM`
 - `durationMinutes`: length of the window
 - `confirmCommand`: fallback command or chat input that confirms the current window

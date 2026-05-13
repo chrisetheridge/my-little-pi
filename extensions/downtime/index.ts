@@ -18,6 +18,7 @@ import {
 } from "@mariozechner/pi-tui";
 
 interface DowntimeFileConfig {
+  enabled?: boolean;
   time?: string;
   durationMinutes?: number | string;
   confirmCommand?: string;
@@ -26,6 +27,7 @@ interface DowntimeFileConfig {
 }
 
 interface DowntimeConfig {
+  enabled: boolean;
   time: string;
   timeMinutes: number;
   durationMinutes: number;
@@ -45,6 +47,7 @@ interface DowntimeWindow {
 
 interface DowntimeMessageDetails {
   kind: "policy" | "status" | "ended";
+  enabled: boolean;
   active: boolean;
   confirmed: boolean;
   windowKey: string | null;
@@ -66,6 +69,7 @@ interface DowntimeState {
 type DowntimeOverlayResult = "continue" | "escape";
 
 const DEFAULT_CONFIG: DowntimeFileConfig = {
+  enabled: false,
   time: "22:00",
   durationMinutes: 8 * 60,
   confirmCommand: "echo continue-downtime",
@@ -147,6 +151,7 @@ function addMinutes(base: Date, minutes: number): Date {
 
 function loadDowntimeConfig(pi: ExtensionAPI, cwd: string): DowntimeConfig {
   const fileConfig = loadFileConfig(cwd);
+  const enabled = fileConfig.config.enabled ?? DEFAULT_CONFIG.enabled ?? false;
   const flaggedTime = pi.getFlag(DOWNTIME_FLAG_NAME);
   const time =
     typeof flaggedTime === "string" && flaggedTime.trim()
@@ -159,6 +164,7 @@ function loadDowntimeConfig(pi: ExtensionAPI, cwd: string): DowntimeConfig {
   if (timeMinutes === undefined) {
     const fallbackTime = DEFAULT_CONFIG.time as string;
     return {
+      enabled,
       time: fallbackTime,
       timeMinutes: parseTimeOfDay(fallbackTime)!,
       durationMinutes: parseDurationMinutes(DEFAULT_CONFIG.durationMinutes) ?? 480,
@@ -170,6 +176,7 @@ function loadDowntimeConfig(pi: ExtensionAPI, cwd: string): DowntimeConfig {
   }
 
   return {
+    enabled,
     time,
     timeMinutes,
     durationMinutes,
@@ -255,7 +262,7 @@ function updateFooterStatus(
   paused = false,
 ): void {
   if (!ctx.hasUI) return;
-  if (!window.active) {
+  if (!config.enabled || !window.active) {
     ctx.ui.setStatus(DOWNTIME_CUSTOM_TYPE, undefined);
     return;
   }
@@ -334,6 +341,14 @@ function buildStatusMessage(
   confirmed: boolean,
   paused: boolean,
 ): string {
+  if (!config.enabled) {
+    return [
+      `Downtime disabled (${window.label}).`,
+      "The downtime guard will not prompt, block tools, or add assistant instructions.",
+      `Confirmation command: ${config.confirmCommand}`,
+    ].join("\n");
+  }
+
   return [
     `Downtime ${window.active ? (paused ? "paused" : "active") : "inactive"} (${window.label}).`,
     confirmed
@@ -362,6 +377,7 @@ function sendStatusMessage(
     display: true,
     details: {
       kind: "status",
+      enabled: config.enabled,
       active: window.active,
       confirmed,
       windowKey: window.key,
@@ -538,11 +554,20 @@ function registerRenderer(pi: ExtensionAPI): void {
 
   pi.registerMessageRenderer(DOWNTIME_CUSTOM_TYPE, (message, { expanded }, theme) => {
     const details = message.details as DowntimeMessageDetails | undefined;
+    const enabled = details?.enabled ?? true;
     const active = details?.active ?? false;
     const confirmed = details?.confirmed ?? false;
     const kind = details?.kind ?? "status";
     const color =
-      kind === "ended" ? "success" : confirmed ? "success" : active ? "warning" : "muted";
+      !enabled
+        ? "muted"
+        : kind === "ended"
+          ? "success"
+          : confirmed
+            ? "success"
+            : active
+              ? "warning"
+              : "muted";
     let text = theme.fg(
       color,
       kind === "ended"
@@ -555,6 +580,7 @@ function registerRenderer(pi: ExtensionAPI): void {
 
     if (expanded && details) {
       text += `\n${theme.fg("dim", `window: ${details.windowLabel}`)}`;
+      text += `\n${theme.fg("dim", `enabled: ${enabled ? "yes" : "no"}`)}`;
       text += `\n${theme.fg("dim", `confirmed: ${confirmed ? "yes" : "no"}`)}`;
       text += `\n${theme.fg("dim", `command: ${details.confirmCommand}`)}`;
       text += `\n${theme.fg("dim", `source: ${details.configSource || "default"}`)}`;
@@ -586,6 +612,14 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
     const config = loadDowntimeConfig(pi, ctx.cwd);
     const window = getWindow(new Date(), config);
     state.confirmedWindowKey = loadConfirmedState(ctx);
+    if (!config.enabled) {
+      state.confirmedWindowKey = null;
+      state.pausedWindowKey = null;
+      state.announcedWindowKey = null;
+      state.wasActive = false;
+      updateFooterStatus(ctx, config, window, false);
+      return;
+    }
     if (!window.active) {
       state.pausedWindowKey = null;
       state.announcedWindowKey = null;
@@ -611,6 +645,9 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
 
     const config = loadDowntimeConfig(pi, ctx.cwd);
     const window = getWindow(new Date(), config);
+    if (!config.enabled) {
+      return { action: "continue" };
+    }
     if (!window.active) {
       return { action: "continue" };
     }
@@ -645,6 +682,11 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
       }
 
       if (action === "confirm") {
+        if (!config.enabled) {
+          ctx.ui.notify("Downtime is disabled.", "warning");
+          return;
+        }
+
         if (!window.active) {
           ctx.ui.notify("Downtime is not active right now.", "warning");
           return;
@@ -667,6 +709,15 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
     const config = loadDowntimeConfig(pi, ctx.cwd);
     const now = new Date();
     const window = getWindow(now, config);
+    if (!config.enabled) {
+      state.confirmedWindowKey = null;
+      state.pausedWindowKey = null;
+      state.announcedWindowKey = null;
+      state.wasActive = false;
+      updateFooterStatus(ctx, config, window, false);
+      return;
+    }
+
     const confirmed = isWindowConfirmed(state, window);
     const paused = isWindowPaused(state, window);
 
@@ -688,6 +739,7 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
             display: false,
             details: {
               kind: "ended",
+              enabled: config.enabled,
               active: false,
               confirmed: false,
               windowKey: window.key,
@@ -734,6 +786,7 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
           display: false,
           details: {
             kind: "policy",
+            enabled: config.enabled,
             active: true,
             confirmed: true,
             windowKey: window.key,
@@ -755,6 +808,7 @@ export default function downtimeExtension(pi: ExtensionAPI): void {
     const config = loadDowntimeConfig(pi, ctx.cwd);
     const now = new Date();
     const window = getWindow(now, config);
+    if (!config.enabled) return;
     if (!window.active) return;
 
     const confirmed = isWindowConfirmed(state, window);
