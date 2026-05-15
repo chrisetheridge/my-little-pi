@@ -114,6 +114,8 @@ Useful commands:
 
 ### `land`
 
+![land example](docs/images/land.png)
+
 Adds `/land`, a full-screen landing workflow runner for repository changes. The command opens idle; press `Enter` to start or `Esc` to close/cancel.
 
 Configuration is required. Project config overrides global config:
@@ -153,13 +155,7 @@ Example:
 Step types:
 
 - `shell`: runs `command` in the current repo with `$SHELL -lc`.
-- `commit`: runs `git add -A`, generates a commit message with `pi -p --no-session --model <model>`, then commits with `git commit -F`.
-
-Controls:
-
-- idle: `Enter` start, `Esc` close
-- running: `Esc` sends SIGTERM to the active command
-- failed, canceled, success: `Esc` closes after preserving output
+- `commit`: runs `git add -A`, generates a commit message with an agent via pi, then commits.
 
 ## Develop
 
