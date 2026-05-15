@@ -112,6 +112,55 @@ Useful commands:
 - `/downtime confirm` confirms continuation for the active window.
 - Running the configured confirmation command in `bash` also confirms the window.
 
+### `landing-workflow`
+
+Adds `/land`, a full-screen landing workflow runner for repository changes. The command opens idle; press `Enter` to start or `Esc` to close/cancel.
+
+Configuration is required. Project config overrides global config:
+
+- global: `~/.pi/agent/extensions/landing-workflow.json`
+- project: `.pi/extensions/landing-workflow.json`
+
+Example:
+
+```json
+{
+  "steps": [
+    {
+      "type": "shell",
+      "label": "Fetch/Rebase",
+      "command": "git fetch origin && git rebase origin/main"
+    },
+    {
+      "type": "shell",
+      "label": "Tests",
+      "command": "pnpm test"
+    },
+    {
+      "type": "commit",
+      "label": "Commit",
+      "model": "sonnet"
+    },
+    {
+      "type": "shell",
+      "label": "Push",
+      "command": "git push"
+    }
+  ]
+}
+```
+
+Step types:
+
+- `shell`: runs `command` in the current repo with `$SHELL -lc`.
+- `commit`: runs `git add -A`, generates a commit message with `pi -p --no-session --model <model>`, then commits with `git commit -F`.
+
+Controls:
+
+- idle: `Enter` start, `Esc` close
+- running: `Esc` sends SIGTERM to the active command
+- failed, canceled, success: `Esc` closes after preserving output
+
 ## Develop
 
 Install dependencies for editor types and local checks:
@@ -157,7 +206,8 @@ Themes hot-reload when the active theme file changes.
       "./extensions/little-spinner/index.ts",
       "./extensions/focused-issue/index.ts",
       "./extensions/session-changes/index.ts",
-      "./extensions/startup-screen/index.ts"
+      "./extensions/startup-screen/index.ts",
+      "./extensions/landing-workflow/index.ts"
     ],
     "skills": ["./skills"],
     "themes": ["./themes"]
