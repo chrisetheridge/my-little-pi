@@ -1,8 +1,8 @@
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { LandingWorkflowRunner, type ProcessSpawner } from "../../../extensions/landing-workflow/runner.ts";
-import type { RunnerEvent } from "../../../extensions/landing-workflow/types.ts";
+import { LandingWorkflowRunner, type ProcessSpawner } from "../../../extensions/land/runner.ts";
+import type { RunnerEvent } from "../../../extensions/land/types.ts";
 
 class FakeProcess extends EventEmitter {
   stdout = new PassThrough();

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { LandingWorkflowComponent } from "../../../extensions/landing-workflow/ui.ts";
-import type { LandingWorkflowConfig, RunnerEvent } from "../../../extensions/landing-workflow/types.ts";
+import { LandingWorkflowComponent } from "../../../extensions/land/ui.ts";
+import type { LandingWorkflowConfig, RunnerEvent } from "../../../extensions/land/types.ts";
 
 const theme = {
   fg: (_name: string, text: string) => text,
@@ -21,7 +21,7 @@ function renderText(component: LandingWorkflowComponent): string {
 describe("landing workflow ui", () => {
   it("idle state renders title, config source, start control, progress, and steps", () => {
     const component = new LandingWorkflowComponent({
-      configResult: { ok: true, source: "/repo/.pi/extensions/landing-workflow.json", config },
+      configResult: { ok: true, source: "/repo/.pi/extensions/land.json", config },
       cwd: "/repo",
       theme,
       done: vi.fn(),
@@ -38,7 +38,7 @@ describe("landing workflow ui", () => {
 
   it("missing config disables start and shows setup instructions", () => {
     const component = new LandingWorkflowComponent({
-      configResult: { ok: false, error: "No landing workflow config found", expectedProjectPath: "/repo/.pi/extensions/landing-workflow.json" },
+      configResult: { ok: false, error: "No landing workflow config found", expectedProjectPath: "/repo/.pi/extensions/land.json" },
       cwd: "/repo",
       theme,
       done: vi.fn(),

@@ -112,14 +112,14 @@ Useful commands:
 - `/downtime confirm` confirms continuation for the active window.
 - Running the configured confirmation command in `bash` also confirms the window.
 
-### `landing-workflow`
+### `land`
 
 Adds `/land`, a full-screen landing workflow runner for repository changes. The command opens idle; press `Enter` to start or `Esc` to close/cancel.
 
 Configuration is required. Project config overrides global config:
 
-- global: `~/.pi/agent/extensions/landing-workflow.json`
-- project: `.pi/extensions/landing-workflow.json`
+- global: `~/.pi/agent/extensions/land.json`
+- project: `.pi/extensions/land.json`
 
 Example:
 
@@ -207,7 +207,7 @@ Themes hot-reload when the active theme file changes.
       "./extensions/focused-issue/index.ts",
       "./extensions/session-changes/index.ts",
       "./extensions/startup-screen/index.ts",
-      "./extensions/landing-workflow/index.ts"
+      "./extensions/land/index.ts"
     ],
     "skills": ["./skills"],
     "themes": ["./themes"]

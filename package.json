@@ -31,7 +31,7 @@
       "./extensions/focused-issue/index.ts",
       "./extensions/session-changes/index.ts",
       "./extensions/startup-screen/index.ts",
-      "./extensions/landing-workflow/index.ts"
+      "./extensions/landing/index.ts"
     ],
     "skills": [
       "./skills"

@@ -215,7 +215,7 @@ export async function showLandingWorkflow(ctx: ExtensionCommandContext, configRe
     overlay: true,
     overlayOptions: {
       anchor: "center",
-      width: "60%",
+      width: "65%",
       minWidth: 72,
       maxHeight: "82%",
       margin: 1,

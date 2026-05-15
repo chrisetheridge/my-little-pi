@@ -2,14 +2,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadLandingWorkflowConfig, validateLandingWorkflowConfig } from "../../../extensions/landing-workflow/config.ts";
+import { loadLandingWorkflowConfig, validateLandingWorkflowConfig } from "../../../extensions/land/config.ts";
 
 function dirs(): { cwd: string; home: string; projectConfig: string; globalConfig: string } {
   const root = mkdtempSync(join(tmpdir(), "landing-config-"));
   const cwd = join(root, "repo");
   const home = join(root, "home");
-  const projectConfig = join(cwd, ".pi", "extensions", "landing-workflow.json");
-  const globalConfig = join(home, ".pi", "agent", "extensions", "landing-workflow.json");
+  const projectConfig = join(cwd, ".pi", "extensions", "land.json");
+  const globalConfig = join(home, ".pi", "agent", "extensions", "land.json");
   mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
   mkdirSync(join(home, ".pi", "agent", "extensions"), { recursive: true });
   return { cwd, home, projectConfig, globalConfig };

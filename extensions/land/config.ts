@@ -5,8 +5,8 @@ import type { ConfigLoadResult, LandingStep, LandingWorkflowConfig } from "./typ
 
 export function configPaths(cwd: string, home = homedir()): { global: string; project: string } {
   return {
-    global: join(home, ".pi", "agent", "extensions", "landing-workflow.json"),
-    project: join(cwd, ".pi", "extensions", "landing-workflow.json"),
+    global: join(home, ".pi", "agent", "extensions", "land.json"),
+    project: join(cwd, ".pi", "extensions", "land.json"),
   };
 }
 

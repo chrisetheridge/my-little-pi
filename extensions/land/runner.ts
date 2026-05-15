@@ -187,7 +187,7 @@ export function buildCommitPrompt(status: string, stat: string, diff: string): s
 }
 
 function defaultTempFile(content: string): string {
-  const dir = mkdtempSync(join(tmpdir(), "landing-workflow-"));
+  const dir = mkdtempSync(join(tmpdir(), "land-"));
   const file = join(dir, "COMMIT_EDITMSG");
   writeFileSync(file, content, "utf-8");
   process.once("exit", () => rmSync(dir, { recursive: true, force: true }));
