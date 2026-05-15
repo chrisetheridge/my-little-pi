@@ -1,0 +1,19 @@
+{
+  "steps": [
+    {
+      "type": "shell",
+      "label": "Check",
+      "command": "pnpm run check"
+    },
+    {
+      "type": "shell",
+      "label": "Test",
+      "command": "pnpm run test"
+    },
+    {
+      "type": "commit",
+      "label": "Commit",
+      "model": "openai-codex/gpt-5.4-mini"
+    }
+  ]
+}
