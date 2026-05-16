@@ -1,8 +1,8 @@
 import {
   FOCUSED_ISSUE_CUSTOM_TYPE,
   type FocusedIssue,
-  type FocusedIssueState,
   type FocusedIssueSnapshot,
+  type FocusedIssueState,
 } from "./types.ts";
 
 function compactText(value: string | undefined, maxLength: number): string | undefined {

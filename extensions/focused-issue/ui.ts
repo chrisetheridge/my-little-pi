@@ -1,10 +1,10 @@
 import { getMarkdownTheme, type Theme } from "@mariozechner/pi-coding-agent";
 import {
+  type Component,
   Markdown,
+  type MarkdownTheme,
   truncateToWidth,
   visibleWidth,
-  type Component,
-  type MarkdownTheme,
 } from "@mariozechner/pi-tui";
 
 import type { FocusedIssueState } from "./types.ts";
@@ -46,7 +46,7 @@ export function formatFocusedIssueMarkdown(state: FocusedIssueState, now = Date.
 
   if (state.issue) {
     const createdAt = state.issue.createdAt
-      ? "Updated " + formatRelativeTime(Date.parse(state.issue.createdAt), now)
+      ? `Updated ${formatRelativeTime(Date.parse(state.issue.createdAt), now)}`
       : undefined;
     lines.push(`# [${state.issue.key}: ${state.issue.title}](${state.issue.url})`);
 
@@ -227,7 +227,10 @@ function sliceScrollableLines(
   const maxOffset = Math.max(0, rendered.length - MAX_PANEL_CONTENT_LINES);
   const scrollOffset = Math.max(0, Math.min(Math.floor(rawScrollOffset), maxOffset));
   if (scrollOffset === 0) {
-    return { lines: [...rendered.slice(0, MAX_PANEL_CONTENT_LINES), "↓ …"], scrollOffset };
+    return {
+      lines: [...rendered.slice(0, MAX_PANEL_CONTENT_LINES), "↓ …"],
+      scrollOffset,
+    };
   }
 
   const hasMoreBelow = scrollOffset + MAX_PANEL_CONTENT_LINES < rendered.length;

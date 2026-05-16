@@ -1,6 +1,11 @@
-import { complete, type AssistantMessage, type UserMessage } from "@mariozechner/pi-ai";
+import { type AssistantMessage, complete, type UserMessage } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { extractFindingsBlock, loadSourceExcerpt, normalizeFindings } from "./findings.ts";
+import {
+  extractFindingsBlock,
+  loadSourceExcerpt,
+  normalizeFindings,
+  type ReviewFinding,
+} from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
 import {
   buildBaseReviewTarget,
@@ -21,16 +26,40 @@ import {
 import { buildInitialReviewState } from "./state.ts";
 import { chooseInitialMode, confirmPreflight, showFindings, showParseRecovery } from "./ui.ts";
 
+type BranchEntry = {
+  type?: unknown;
+  message?: {
+    role?: unknown;
+    content?: unknown[];
+  };
+};
+
+type TextContentPart = {
+  type: "text";
+  text: string;
+};
+
+function isTextContentPart(part: unknown): part is TextContentPart {
+  return (
+    typeof part === "object" &&
+    part !== null &&
+    "type" in part &&
+    part.type === "text" &&
+    "text" in part &&
+    typeof part.text === "string"
+  );
+}
+
 function lastAssistantText(ctx: Pick<ExtensionCommandContext, "sessionManager">): string {
   const branch = ctx.sessionManager.getBranch();
 
   for (let i = branch.length - 1; i >= 0; i -= 1) {
-    const entry = branch[i] as any;
+    const entry = branch[i] as BranchEntry;
     if (entry.type !== "message" || entry.message?.role !== "assistant") continue;
 
     return (entry.message.content ?? [])
-      .filter((part: any) => part.type === "text" && typeof part.text === "string")
-      .map((part: any) => part.text)
+      .filter(isTextContentPart)
+      .map((part) => part.text)
       .join("\n");
   }
 
@@ -167,7 +196,7 @@ async function runReview(ctx: ExtensionCommandContext, target: ReviewTarget): Pr
         await reviewCtx.waitForIdle();
         const output = lastAssistantText(reviewCtx);
 
-        let findings;
+        let findings: ReviewFinding[];
         try {
           const parsed = extractFindingsBlock(output);
           findings = normalizeFindings(parsed.findings);

@@ -1,4 +1,6 @@
+import type { ExtensionAPI, Theme, ToolRenderResultOptions } from "@mariozechner/pi-coding-agent";
 import {
+  AssistantMessageComponent,
   createBashTool,
   createEditTool,
   createFindTool,
@@ -6,14 +8,7 @@ import {
   createLsTool,
   createReadTool,
   createWriteTool,
-  AssistantMessageComponent,
   renderDiff,
-} from "@mariozechner/pi-coding-agent";
-import type {
-  ExtensionAPI,
-  ExtensionContext,
-  Theme,
-  ToolRenderResultOptions,
 } from "@mariozechner/pi-coding-agent";
 import { Markdown, Text } from "@mariozechner/pi-tui";
 
@@ -25,7 +20,36 @@ const ASSISTANT_PATCH_FLAG = Symbol.for("little-renderer:assistant-message-patch
 const BLINK_INTERVAL_MS = 500;
 type BlinkStatus = "pending" | "success" | "error";
 type BlinkEntry = { invalidate: () => void; active: boolean };
-const blinkEntries = new Map<any, BlinkEntry>();
+type MutableRecord = Record<string | symbol, unknown>;
+type MessageContentBlock = { type?: unknown; thinking?: unknown; text?: unknown };
+type AssistantLikeMessage = { role?: unknown; content?: MessageContentBlock[] };
+type MessageEvent = { message?: AssistantLikeMessage; messages?: AssistantLikeMessage[] };
+type ToolResult = {
+  content?: Array<{ type?: unknown; text?: unknown }>;
+  details?: {
+    truncation?: { truncated?: unknown; totalLines?: unknown };
+    diff?: unknown;
+  };
+};
+type LocalToolRenderContext = {
+  cwd: string;
+  expanded?: boolean;
+  executionStarted?: boolean;
+  invalidate?: () => void;
+  isError?: boolean;
+  isPartial?: boolean;
+  state?: MutableRecord;
+};
+type SimpleFileArgs = {
+  path?: string;
+  pattern?: string;
+  glob?: string;
+  command?: string;
+  content?: string;
+};
+type RegisteredTool = Parameters<ExtensionAPI["registerTool"]>[0];
+type CompactTool = Omit<RegisteredTool, "renderCall" | "renderResult">;
+const blinkEntries = new Map<unknown, BlinkEntry>();
 let blinkTimer: ReturnType<typeof setTimeout> | null = null;
 let blinkPhase = true;
 let toolRenderersInstalled = false;
@@ -58,8 +82,11 @@ function prefixThinkingLine(text: string): string {
 }
 
 function registerThinkingLabels(pi: ExtensionAPI): void {
-  const patchMessage = (event: any) => {
-    const message = event?.message;
+  const patchMessage = (event: unknown) => {
+    const message =
+      typeof event === "object" && event !== null && "message" in event
+        ? (event.message as AssistantLikeMessage | undefined)
+        : undefined;
     if (!message || message.role !== "assistant" || !Array.isArray(message.content)) return;
     for (const block of message.content) {
       if (block && block.type === "thinking" && typeof block.thinking === "string") {
@@ -71,8 +98,9 @@ function registerThinkingLabels(pi: ExtensionAPI): void {
   pi.on("message_update", async (event) => patchMessage(event));
   pi.on("message_end", async (event) => patchMessage(event));
   pi.on("context", async (event) => {
-    if (!Array.isArray((event as any).messages)) return;
-    for (const msg of (event as any).messages) {
+    const messages = (event as MessageEvent).messages;
+    if (!Array.isArray(messages)) return;
+    for (const msg of messages) {
       if (!msg || msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
       for (const block of msg.content) {
         if (block && block.type === "thinking" && typeof block.thinking === "string") {
@@ -207,31 +235,51 @@ class ThinkingParagraph {
   }
 }
 
+type AssistantMessagePatchTarget = {
+  updateContent: (message: unknown) => void;
+  contentContainer?: { children?: unknown[] };
+  markdownTheme: ConstructorParameters<typeof Markdown>[3];
+  [key: symbol]: unknown;
+};
+
+type MarkdownInternals = {
+  text?: string;
+  defaultTextStyle?: ConstructorParameters<typeof Markdown>[4];
+};
+
 function patchAssistantMessages(): void {
-  const proto = AssistantMessageComponent.prototype as any;
+  const proto = AssistantMessageComponent.prototype as unknown as AssistantMessagePatchTarget;
   if (proto[ASSISTANT_PATCH_FLAG]) return;
 
   const originalUpdateContent = proto.updateContent;
-  proto.updateContent = function patchedUpdateContent(message: any) {
-    if (!message || !Array.isArray(message.content)) {
+  proto.updateContent = function patchedUpdateContent(
+    this: AssistantMessagePatchTarget,
+    message: unknown,
+  ) {
+    if (
+      typeof message !== "object" ||
+      message === null ||
+      !("content" in message) ||
+      !Array.isArray(message.content)
+    ) {
       return originalUpdateContent.call(this, message);
     }
 
     originalUpdateContent.call(this, message);
 
-    const container = (this as any).contentContainer;
+    const container = this.contentContainer;
     if (!container?.children) return;
-    const mdTheme = (this as any).markdownTheme;
+    const mdTheme = this.markdownTheme;
 
     for (let i = container.children.length - 1; i >= 0; i--) {
       const child = container.children[i];
       if (child instanceof Markdown) {
-        const text = (child as any).text;
+        const markdown = child as unknown as MarkdownInternals;
+        const text = markdown.text;
         if (!text) continue;
-        const isThinking = !!(child as any).defaultTextStyle?.italic;
+        const isThinking = !!markdown.defaultTextStyle?.italic;
         if (isThinking) {
-          const style = (child as any).defaultTextStyle;
-          container.children[i] = new ThinkingParagraph(text, mdTheme, style);
+          container.children[i] = new ThinkingParagraph(text, mdTheme, markdown.defaultTextStyle);
         } else {
           container.children[i] = new DottedParagraph(text, mdTheme);
         }
@@ -242,7 +290,7 @@ function patchAssistantMessages(): void {
   proto[ASSISTANT_PATCH_FLAG] = true;
 }
 
-function getBlinkKey(ctx: any): any {
+function getBlinkKey(ctx: LocalToolRenderContext): unknown {
   return ctx?.state ?? ctx;
 }
 
@@ -265,10 +313,11 @@ function stopBlinkTimerIfEmpty(): void {
   }
 }
 
-function setupBlinkTimer(ctx: any): void {
+function setupBlinkTimer(ctx: LocalToolRenderContext): void {
   const key = getBlinkKey(ctx);
   if (!key) return;
-  const invalidate = typeof ctx?.invalidate === "function" ? () => ctx.invalidate() : () => {};
+  const invalidateFn = ctx.invalidate;
+  const invalidate = typeof invalidateFn === "function" ? () => invalidateFn() : () => {};
   const existing = blinkEntries.get(key);
   if (existing) {
     existing.invalidate = invalidate;
@@ -278,25 +327,25 @@ function setupBlinkTimer(ctx: any): void {
   scheduleBlinkTimer();
 }
 
-function clearBlinkTimer(ctx: any): void {
+function clearBlinkTimer(ctx: LocalToolRenderContext): void {
   const key = getBlinkKey(ctx);
   if (!key) return;
   blinkEntries.delete(key);
   stopBlinkTimerIfEmpty();
 }
 
-function blinkDot(ctx: any, theme: Theme): string {
+function blinkDot(ctx: LocalToolRenderContext, theme: Theme): string {
   setupBlinkTimer(ctx);
   return blinkPhase ? theme.fg("success", "●") : theme.fg("muted", "○");
 }
 
-function setToolStatus(ctx: any, status: BlinkStatus): void {
+function setToolStatus(ctx: LocalToolRenderContext, status: BlinkStatus): void {
   if (ctx?.state) {
     ctx.state._toolStatus = status;
   }
 }
 
-function syncToolCallStatus(ctx: any): void {
+function syncToolCallStatus(ctx: LocalToolRenderContext): void {
   if (!ctx?.executionStarted || ctx?.isPartial) {
     setToolStatus(ctx, "pending");
     return;
@@ -304,7 +353,7 @@ function syncToolCallStatus(ctx: any): void {
   setToolStatus(ctx, ctx.isError ? "error" : "success");
 }
 
-function toolStatusDot(ctx: any, theme: Theme): string {
+function toolStatusDot(ctx: LocalToolRenderContext, theme: Theme): string {
   const status = ctx.state?._toolStatus as BlinkStatus | undefined;
   if (status === "success") return `${theme.fg("success", "●")} `;
   if (status === "error") return `${theme.fg("error", "●")} `;
@@ -320,7 +369,7 @@ function branchIndent(text: string): string {
 }
 
 function withBranch(content: string): string {
-  if (!content || !content.trim()) return "";
+  if (!content.trim()) return "";
   const lines = content.split("\n");
   if (lines.length === 1) return branchLead(lines[0] ?? "");
   return `${branchLead(lines[0] ?? "")}\n${lines.slice(1).map(branchIndent).join("\n")}`;
@@ -336,16 +385,21 @@ function shortPath(cwd: string, filePath: string): string {
   return home ? filePath.replace(home, "~") : filePath;
 }
 
-function firstTextContent(result: any): string {
-  const content = result.content[0];
-  return content?.type === "text" ? (content.text ?? "") : "";
+function firstTextContent(result: ToolResult): string {
+  const content = result.content?.[0];
+  return content?.type === "text" && typeof content.text === "string" ? content.text : "";
 }
 
 function countNonEmptyLines(text: string): number {
   return text.split("\n").filter((line) => line.trim().length > 0).length;
 }
 
-function createCallHeader(theme: Theme, toolLabel: string, summary: string, ctx: any): string {
+function createCallHeader(
+  theme: Theme,
+  toolLabel: string,
+  summary: string,
+  ctx: LocalToolRenderContext,
+): string {
   const label = theme.fg("toolTitle", theme.bold(toolLabel));
   const suffix = summary ? ` ${theme.fg("accent", summary)}` : "";
   return `${toolStatusDot(ctx, theme)}${label}${suffix}`;
@@ -359,7 +413,7 @@ function renderPreviewLines(text: string, theme: Theme, limit = 20): string {
 function renderReadCall(
   args: { path?: string; offset?: number; limit?: number },
   theme: Theme,
-  ctx: any,
+  ctx: LocalToolRenderContext,
 ): Text {
   syncToolCallStatus(ctx);
   const summary = args.path ? shortPath(ctx.cwd, args.path) : theme.fg("muted", "file");
@@ -371,10 +425,10 @@ function renderReadCall(
 }
 
 function renderReadResult(
-  result: any,
+  result: ToolResult,
   options: ToolRenderResultOptions,
   theme: Theme,
-  ctx: any,
+  ctx: LocalToolRenderContext,
 ): Text {
   if (options.isPartial) {
     setupBlinkTimer(ctx);
@@ -400,7 +454,7 @@ function renderReadResult(
 function renderBashCall(
   args: { command?: string; timeout?: number },
   theme: Theme,
-  ctx: any,
+  ctx: LocalToolRenderContext,
 ): Text {
   syncToolCallStatus(ctx);
   const cmd = args.command ?? "";
@@ -411,10 +465,10 @@ function renderBashCall(
 }
 
 function renderBashResult(
-  result: any,
+  result: ToolResult,
   options: ToolRenderResultOptions,
   theme: Theme,
-  ctx: any,
+  ctx: LocalToolRenderContext,
 ): Text {
   if (options.isPartial) {
     setupBlinkTimer(ctx);
@@ -441,9 +495,9 @@ function renderBashResult(
 
 function buildSimpleFileSummary(
   name: string,
-  args: { path?: string; pattern?: string; glob?: string; command?: string; content?: string },
+  args: SimpleFileArgs,
   theme: Theme,
-  ctx: any,
+  ctx: LocalToolRenderContext,
 ): string {
   if (name === "grep" && args.pattern) {
     let summary = JSON.stringify(args.pattern);
@@ -466,9 +520,9 @@ function buildSimpleFileSummary(
 
 function renderSimpleFileCall(
   name: string,
-  args: { path?: string; pattern?: string; glob?: string; command?: string; content?: string },
+  args: SimpleFileArgs,
   theme: Theme,
-  ctx: any,
+  ctx: LocalToolRenderContext,
 ): Text {
   syncToolCallStatus(ctx);
   const summary = buildSimpleFileSummary(name, args, theme, ctx);
@@ -479,7 +533,7 @@ function renderSimpleFileCall(
   );
 }
 
-function renderEditCall(args: { path?: string }, theme: Theme, ctx: any): Text {
+function renderEditCall(args: { path?: string }, theme: Theme, ctx: LocalToolRenderContext): Text {
   syncToolCallStatus(ctx);
   const summary = args.path ? shortPath(ctx.cwd, args.path) : theme.fg("muted", "file");
   const header = createCallHeader(theme, "Edit", summary, ctx);
@@ -500,7 +554,7 @@ function renderEditCall(args: { path?: string }, theme: Theme, ctx: any): Text {
   return new Text(`${header} ${parts.join(" ")}`, 0, 0);
 }
 
-function scheduleEditHeaderRefresh(ctx: any): void {
+function scheduleEditHeaderRefresh(ctx: LocalToolRenderContext): void {
   const state = ctx?.state;
   if (!state || state._editHeaderRefreshScheduled) return;
   state._editHeaderRefreshScheduled = true;
@@ -513,10 +567,10 @@ function scheduleEditHeaderRefresh(ctx: any): void {
 }
 
 function renderEditResult(
-  result: any,
+  result: ToolResult,
   options: ToolRenderResultOptions,
   theme: Theme,
-  ctx: any,
+  ctx: LocalToolRenderContext,
 ): Text {
   if (options.isPartial) {
     setupBlinkTimer(ctx);
@@ -573,10 +627,10 @@ function formatEditChangeSummary(counts: { added: number; deleted: number }): st
 
 function renderSimpleFileResult(
   name: string,
-  result: any,
+  result: ToolResult,
   options: ToolRenderResultOptions,
   theme: Theme,
-  ctx: any,
+  ctx: LocalToolRenderContext,
 ): Text {
   if (options.isPartial) {
     setupBlinkTimer(ctx);
@@ -614,7 +668,7 @@ function renderSimpleFileResult(
   }
 
   const lineCount = text ? countNonEmptyLines(text) : 0;
-  let summary = theme.fg(ctx.isError ? "error" : "success", `${lineCount} lines`);
+  const summary = theme.fg(ctx.isError ? "error" : "success", `${lineCount} lines`);
   if (!options.expanded) {
     return new Text(withBranch(summary), 0, 0);
   }
@@ -623,32 +677,19 @@ function renderSimpleFileResult(
 
 function registerCompactTool(
   pi: ExtensionAPI,
-  tool: {
-    name: string;
-    label: string;
-    description: string;
-    parameters: any;
-    renderShell?: "default" | "self";
-    execute: (
-      toolCallId: string,
-      params: any,
-      signal: AbortSignal | undefined,
-      onUpdate: any,
-      ctx: ExtensionContext,
-    ) => Promise<any>;
-  },
-  renderCall: (args: any, theme: Theme, ctx: any) => Text,
-  renderResult: (result: any, options: ToolRenderResultOptions, theme: Theme, ctx: any) => Text,
+  tool: CompactTool,
+  renderCall: (args: unknown, theme: Theme, ctx: unknown) => Text,
+  renderResult: (
+    result: unknown,
+    options: ToolRenderResultOptions,
+    theme: Theme,
+    ctx: unknown,
+  ) => Text,
 ): void {
   pi.registerTool({
-    name: tool.name,
-    label: tool.label,
-    description: tool.description,
-    parameters: tool.parameters,
-    renderShell: tool.renderShell,
-    execute: tool.execute,
-    renderCall,
-    renderResult,
+    ...tool,
+    renderCall: renderCall as RegisteredTool["renderCall"],
+    renderResult: renderResult as RegisteredTool["renderResult"],
   });
 }
 
@@ -657,37 +698,93 @@ function patchToolExecutionRenderers(pi: ExtensionAPI): void {
 
   const cwd = process.cwd();
 
-  registerCompactTool(pi, createReadTool(cwd) as any, renderReadCall, renderReadResult);
-  registerCompactTool(pi, createBashTool(cwd) as any, renderBashCall, renderBashResult);
   registerCompactTool(
     pi,
-    createGrepTool(cwd) as any,
-    (args, theme, ctx) => renderSimpleFileCall("grep", args, theme, ctx),
-    (result, options, theme, ctx) => renderSimpleFileResult("grep", result, options, theme, ctx),
+    createReadTool(cwd) as unknown as CompactTool,
+    (args, theme, ctx) =>
+      renderReadCall(
+        args as { path?: string; offset?: number; limit?: number },
+        theme,
+        ctx as LocalToolRenderContext,
+      ),
+    (result, options, theme, ctx) =>
+      renderReadResult(result as ToolResult, options, theme, ctx as LocalToolRenderContext),
   );
   registerCompactTool(
     pi,
-    createFindTool(cwd) as any,
-    (args, theme, ctx) => renderSimpleFileCall("find", args, theme, ctx),
-    (result, options, theme, ctx) => renderSimpleFileResult("find", result, options, theme, ctx),
+    createBashTool(cwd) as unknown as CompactTool,
+    (args, theme, ctx) =>
+      renderBashCall(
+        args as { command?: string; timeout?: number },
+        theme,
+        ctx as LocalToolRenderContext,
+      ),
+    (result, options, theme, ctx) =>
+      renderBashResult(result as ToolResult, options, theme, ctx as LocalToolRenderContext),
   );
   registerCompactTool(
     pi,
-    createLsTool(cwd) as any,
-    (args, theme, ctx) => renderSimpleFileCall("ls", args, theme, ctx),
-    (result, options, theme, ctx) => renderSimpleFileResult("ls", result, options, theme, ctx),
+    createGrepTool(cwd) as unknown as CompactTool,
+    (args, theme, ctx) =>
+      renderSimpleFileCall("grep", args as SimpleFileArgs, theme, ctx as LocalToolRenderContext),
+    (result, options, theme, ctx) =>
+      renderSimpleFileResult(
+        "grep",
+        result as ToolResult,
+        options,
+        theme,
+        ctx as LocalToolRenderContext,
+      ),
   );
   registerCompactTool(
     pi,
-    createWriteTool(cwd) as any,
-    (args, theme, ctx) => renderSimpleFileCall("write", args, theme, ctx),
-    (result, options, theme, ctx) => renderSimpleFileResult("write", result, options, theme, ctx),
+    createFindTool(cwd) as unknown as CompactTool,
+    (args, theme, ctx) =>
+      renderSimpleFileCall("find", args as SimpleFileArgs, theme, ctx as LocalToolRenderContext),
+    (result, options, theme, ctx) =>
+      renderSimpleFileResult(
+        "find",
+        result as ToolResult,
+        options,
+        theme,
+        ctx as LocalToolRenderContext,
+      ),
   );
   registerCompactTool(
     pi,
-    { ...(createEditTool(cwd) as any), renderShell: "default" },
-    renderEditCall,
-    renderEditResult,
+    createLsTool(cwd) as unknown as CompactTool,
+    (args, theme, ctx) =>
+      renderSimpleFileCall("ls", args as SimpleFileArgs, theme, ctx as LocalToolRenderContext),
+    (result, options, theme, ctx) =>
+      renderSimpleFileResult(
+        "ls",
+        result as ToolResult,
+        options,
+        theme,
+        ctx as LocalToolRenderContext,
+      ),
+  );
+  registerCompactTool(
+    pi,
+    createWriteTool(cwd) as unknown as CompactTool,
+    (args, theme, ctx) =>
+      renderSimpleFileCall("write", args as SimpleFileArgs, theme, ctx as LocalToolRenderContext),
+    (result, options, theme, ctx) =>
+      renderSimpleFileResult(
+        "write",
+        result as ToolResult,
+        options,
+        theme,
+        ctx as LocalToolRenderContext,
+      ),
+  );
+  registerCompactTool(
+    pi,
+    { ...(createEditTool(cwd) as unknown as CompactTool), renderShell: "default" },
+    (args, theme, ctx) =>
+      renderEditCall(args as { path?: string }, theme, ctx as LocalToolRenderContext),
+    (result, options, theme, ctx) =>
+      renderEditResult(result as ToolResult, options, theme, ctx as LocalToolRenderContext),
   );
 
   toolRenderersInstalled = true;

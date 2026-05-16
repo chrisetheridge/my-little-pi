@@ -6,11 +6,29 @@ const SPINNER_FRAMES = [...SPINNER_CHARS, ...[...SPINNER_CHARS].reverse()];
 const LOADER_INTERVAL_MS = 250;
 const LOADER_PATCH_FLAG = Symbol.for("little-spinner:loader-patched");
 
+type LoaderPatchTarget = {
+  currentFrame: number;
+  intervalId?: NodeJS.Timeout;
+  message: string;
+  messageColorFn: (message: string) => string;
+  setText: (text: string) => void;
+  spinnerColorFn: (frame: string) => string;
+  start: () => void;
+  stop: () => void;
+  text: string;
+  ui?: { requestRender: () => void };
+  updateDisplay: () => void;
+};
+
+type LoaderPatchPrototype = LoaderPatchTarget & {
+  [key: symbol]: boolean | undefined;
+};
+
 function patchLoader(): void {
-  const proto = Loader.prototype as any;
+  const proto = Loader.prototype as unknown as LoaderPatchPrototype;
   if (proto[LOADER_PATCH_FLAG]) return;
 
-  proto.updateDisplay = function patchedUpdateDisplay() {
+  proto.updateDisplay = function patchedUpdateDisplay(this: LoaderPatchTarget) {
     const frame = SPINNER_FRAMES[this.currentFrame % SPINNER_FRAMES.length];
     const ansiRe = new RegExp(`${"\u001b"}\\[[0-9;]*m`);
     const message =
@@ -25,7 +43,7 @@ function patchLoader(): void {
     }
   };
 
-  proto.start = function patchedStart() {
+  proto.start = function patchedStart(this: LoaderPatchTarget) {
     this.stop();
     this.updateDisplay();
     const scheduleNext = () => {

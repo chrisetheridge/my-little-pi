@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,8 +6,13 @@ import type { LandingStep, LandingWorkflowConfig, RunnerEvent } from "./types.ts
 
 const MAX_DIFF_CHARS = 60_000;
 
-export type SpawnedProcess = Pick<ChildProcessWithoutNullStreams, "stdout" | "stderr" | "kill"> & { stdin: Pick<ChildProcessWithoutNullStreams["stdin"], "end"> } & {
-  on(event: "close", listener: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+export type SpawnedProcess = Pick<ChildProcessWithoutNullStreams, "stdout" | "stderr" | "kill"> & {
+  stdin: Pick<ChildProcessWithoutNullStreams["stdin"], "end">;
+} & {
+  on(
+    event: "close",
+    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
+  ): unknown;
   on(event: "error", listener: (error: Error) => void): unknown;
 };
 
@@ -65,8 +70,17 @@ export class LandingWorkflowRunner {
           return;
         }
         const message = error instanceof Error ? error.message : String(error);
-        this.onEvent({ type: "step-failed", index, error: message, at: this.now() });
-        this.onEvent({ type: "workflow-failed", error: message, at: this.now() });
+        this.onEvent({
+          type: "step-failed",
+          index,
+          error: message,
+          at: this.now(),
+        });
+        this.onEvent({
+          type: "workflow-failed",
+          error: message,
+          at: this.now(),
+        });
         return;
       }
       if (this.canceled) {
@@ -81,18 +95,29 @@ export class LandingWorkflowRunner {
 
   private async runCommitStep(model: string): Promise<void> {
     await this.runLogged("git add -A", "git", ["add", "-A"]);
-    const quiet = await this.runCapture("git diff --cached --quiet", "git", ["diff", "--cached", "--quiet"], {
-      allowExitCodes: [0, 1],
-    });
+    const quiet = await this.runCapture(
+      "git diff --cached --quiet",
+      "git",
+      ["diff", "--cached", "--quiet"],
+      {
+        allowExitCodes: [0, 1],
+      },
+    );
     if (quiet.code === 0) throw new Error("No changes staged after git add -A");
-    if (quiet.code !== 1) throw new Error(quiet.output.trim() || "git diff --cached --quiet failed");
+    if (quiet.code !== 1)
+      throw new Error(quiet.output.trim() || "git diff --cached --quiet failed");
 
     const status = await this.runCapture("git status --short", "git", ["status", "--short"]);
-    const stat = await this.runCapture("git diff --cached --stat", "git", ["diff", "--cached", "--stat"]);
+    const stat = await this.runCapture("git diff --cached --stat", "git", [
+      "diff",
+      "--cached",
+      "--stat",
+    ]);
     const diff = await this.runCapture("git diff --cached", "git", ["diff", "--cached"]);
-    const cappedDiff = diff.output.length > MAX_DIFF_CHARS
-      ? `${diff.output.slice(0, MAX_DIFF_CHARS)}\n\n[diff truncated at ${MAX_DIFF_CHARS} chars]`
-      : diff.output;
+    const cappedDiff =
+      diff.output.length > MAX_DIFF_CHARS
+        ? `${diff.output.slice(0, MAX_DIFF_CHARS)}\n\n[diff truncated at ${MAX_DIFF_CHARS} chars]`
+        : diff.output;
 
     const prompt = buildCommitPrompt(status.output, stat.output, cappedDiff);
     const agent = await this.runCapture(
@@ -138,7 +163,10 @@ export class LandingWorkflowRunner {
     options: { emitOutput: boolean },
   ): Promise<{ code: number; output: string }> {
     return new Promise((resolve, reject) => {
-      const child = this.spawnProcess(command, args, { cwd: this.cwd, env: process.env });
+      const child = this.spawnProcess(command, args, {
+        cwd: this.cwd,
+        env: process.env,
+      });
       this.active = child;
       let settled = false;
       let output = "";

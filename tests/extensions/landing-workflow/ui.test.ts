@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { LandingWorkflowComponent } from "../../../extensions/land/ui.ts";
-import type { LandingWorkflowConfig, RunnerEvent } from "../../../extensions/land/types.ts";
+import type {
+  LandingWorkflowConfig,
+  RunnerEvent,
+} from "../../../extensions/land/types.ts";
 
 const theme = {
   fg: (_name: string, text: string) => text,
@@ -21,15 +24,19 @@ function renderText(component: LandingWorkflowComponent): string {
 describe("landing workflow ui", () => {
   it("idle state renders title, config source, start control, progress, and steps", () => {
     const component = new LandingWorkflowComponent({
-      configResult: { ok: true, source: "/repo/.pi/extensions/land.json", config },
+      configResult: {
+        ok: true,
+        source: "/repo/.pi/extensions/land.json",
+        config,
+      },
       cwd: "/repo",
       theme,
       done: vi.fn(),
       now: () => 0,
     });
     const text = renderText(component);
-    expect(text).toContain("Landing Workflow");
-    expect(text).toContain("/repo/.pi/extensions/landing-");
+    expect(text).toContain("Land");
+    expect(text).toContain("/repo/.pi/extensions/land");
     expect(text).toContain("Enter Start · Esc Cancel");
     expect(text).toContain("0/2");
     expect(text).toContain("Tests");
@@ -38,14 +45,18 @@ describe("landing workflow ui", () => {
 
   it("missing config disables start and shows setup instructions", () => {
     const component = new LandingWorkflowComponent({
-      configResult: { ok: false, error: "No landing workflow config found", expectedProjectPath: "/repo/.pi/extensions/land.json" },
+      configResult: {
+        ok: false,
+        error: "No land workflow config found",
+        expectedProjectPath: "/repo/.pi/extensions/land.json",
+      },
       cwd: "/repo",
       theme,
       done: vi.fn(),
     });
     const text = renderText(component);
     expect(text).toContain("Start disabled · Esc Close");
-    expect(text).toContain("Expected: /repo/.pi/extensions/landin");
+    expect(text).toContain("Expected: /repo/.pi/extensions/land");
   });
 
   it("running state renders active step, elapsed time, progress, and output", async () => {

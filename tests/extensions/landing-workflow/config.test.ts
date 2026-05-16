@@ -2,9 +2,17 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { loadLandingWorkflowConfig, validateLandingWorkflowConfig } from "../../../extensions/land/config.ts";
+import {
+  loadLandingWorkflowConfig,
+  validateLandingWorkflowConfig,
+} from "../../../extensions/land/config.ts";
 
-function dirs(): { cwd: string; home: string; projectConfig: string; globalConfig: string } {
+function dirs(): {
+  cwd: string;
+  home: string;
+  projectConfig: string;
+  globalConfig: string;
+} {
   const root = mkdtempSync(join(tmpdir(), "landing-config-"));
   const cwd = join(root, "repo");
   const home = join(root, "home");
@@ -28,14 +36,19 @@ describe("landing workflow config", () => {
     const result = loadLandingWorkflowConfig(cwd, home);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error).toContain("No landing workflow config found");
+      expect(result.error).toContain("No land workflow config found");
       expect(result.expectedProjectPath).toBe(projectConfig);
     }
   });
 
   it("project config overrides global config", () => {
     const { cwd, home, projectConfig, globalConfig } = dirs();
-    writeFileSync(globalConfig, JSON.stringify({ steps: [{ type: "shell", label: "Global", command: "echo global" }] }));
+    writeFileSync(
+      globalConfig,
+      JSON.stringify({
+        steps: [{ type: "shell", label: "Global", command: "echo global" }],
+      }),
+    );
     writeFileSync(projectConfig, JSON.stringify(valid));
     const result = loadLandingWorkflowConfig(cwd, home);
     expect(result.ok).toBe(true);
@@ -56,10 +69,26 @@ describe("landing workflow config", () => {
   it.each([
     ["missing steps", {}, "steps array"],
     ["empty steps", { steps: [] }, "non-empty"],
-    ["bad step type", { steps: [{ type: "noop", label: "Noop" }] }, "unknown type"],
-    ["missing label", { steps: [{ type: "shell", command: "echo hi" }] }, "label"],
-    ["missing shell command", { steps: [{ type: "shell", label: "Shell" }] }, "command"],
-    ["missing commit model", { steps: [{ type: "commit", label: "Commit" }] }, "model"],
+    [
+      "bad step type",
+      { steps: [{ type: "noop", label: "Noop" }] },
+      "unknown type",
+    ],
+    [
+      "missing label",
+      { steps: [{ type: "shell", command: "echo hi" }] },
+      "label",
+    ],
+    [
+      "missing shell command",
+      { steps: [{ type: "shell", label: "Shell" }] },
+      "command",
+    ],
+    [
+      "missing commit model",
+      { steps: [{ type: "commit", label: "Commit" }] },
+      "model",
+    ],
   ])("rejects %s", (_name, config, message) => {
     const result = validateLandingWorkflowConfig(config);
     expect(result.ok).toBe(false);

@@ -1,22 +1,22 @@
+import path from "node:path";
 import {
-  SessionManager,
-  VERSION,
   type ExtensionAPI,
   type ExtensionCommandContext,
   type ExtensionContext,
   type SessionInfo,
+  SessionManager,
   type Theme,
+  VERSION,
 } from "@mariozechner/pi-coding-agent";
 import {
-  Key,
+  type Component,
   isKeyRelease,
+  Key,
   matchesKey,
+  type TUI,
   truncateToWidth,
   visibleWidth,
-  type Component,
-  type TUI,
 } from "@mariozechner/pi-tui";
-import path from "node:path";
 
 const MAX_SESSIONS = 10;
 
@@ -43,7 +43,7 @@ class StartupHeader implements Component {
     private readonly theme: Theme,
     private readonly error?: string,
   ) {
-    this.#unsubscribe = ctx.ui.onTerminalInput(data => this.#onTerminalInput(data));
+    this.#unsubscribe = ctx.ui.onTerminalInput((data) => this.#onTerminalInput(data));
   }
 
   render(width: number): string[] {
@@ -59,9 +59,9 @@ class StartupHeader implements Component {
     const lines: string[] = [""];
 
     if (!canUseColumns) {
-      lines.push(...left.map(line => truncateToWidth(line, width)));
+      lines.push(...left.map((line) => truncateToWidth(line, width)));
       lines.push("");
-      lines.push(...right.map(line => truncateToWidth(line, width)));
+      lines.push(...right.map((line) => truncateToWidth(line, width)));
       lines.push("");
       return lines;
     }
@@ -92,7 +92,7 @@ class StartupHeader implements Component {
     return [
       centerAnsi(this.theme.bold(this.theme.fg("accent", "my little pi")), width),
       "",
-      ...getPiMascot(this.theme).map(line => centerAnsi(line, width)),
+      ...getPiMascot(this.theme).map((line) => centerAnsi(line, width)),
       "",
       centerAnsi(this.theme.fg("muted", model), width),
       centerAnsi(this.theme.fg("dim", provider), width),
@@ -188,7 +188,9 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setHeader((tui, theme) => new StartupHeader(tui, ctx, state, theme));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      ctx.ui.setHeader((tui, theme) => new StartupHeader(tui, ctx, { rows: [], selected: 0 }, theme, message));
+      ctx.ui.setHeader(
+        (tui, theme) => new StartupHeader(tui, ctx, { rows: [], selected: 0 }, theme, message),
+      );
     }
   });
 }
@@ -205,7 +207,8 @@ async function resumeRecentSession(
   }
 
   const trimmed = args.trim();
-  const selected = trimmed.length > 0 ? Number.parseInt(trimmed, 10) : await selectRecentSession(ctx, rows);
+  const selected =
+    trimmed.length > 0 ? Number.parseInt(trimmed, 10) : await selectRecentSession(ctx, rows);
   const row = selected !== undefined && Number.isInteger(selected) ? rows[selected] : undefined;
 
   if (!row) {
@@ -216,8 +219,13 @@ async function resumeRecentSession(
   await ctx.switchSession(row.path);
 }
 
-async function selectRecentSession(ctx: ExtensionCommandContext, rows: RecentSessionRow[]): Promise<number | undefined> {
-  const options = rows.map((row, index) => `${index}: ${row.date}  ${row.repo}  ${row.title || row.cwd}`);
+async function selectRecentSession(
+  ctx: ExtensionCommandContext,
+  rows: RecentSessionRow[],
+): Promise<number | undefined> {
+  const options = rows.map(
+    (row, index) => `${index}: ${row.date}  ${row.repo}  ${row.title || row.cwd}`,
+  );
   const selected = await ctx.ui.select("Recent sessions", options);
   return selected === undefined ? undefined : options.indexOf(selected);
 }

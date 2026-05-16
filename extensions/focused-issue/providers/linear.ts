@@ -62,7 +62,7 @@ export function parseLinearReference(input: string): LinearReference | null {
 
   const keyMatch = ISSUE_KEY_PATTERN.exec(reference);
   if (!reference.includes("://")) {
-    return keyMatch ? { kind: "key", lookup: keyMatch[1]!, display: keyMatch[1]! } : null;
+    return keyMatch ? { kind: "key", lookup: keyMatch[1], display: keyMatch[1] } : null;
   }
 
   let url: URL;
@@ -74,7 +74,7 @@ export function parseLinearReference(input: string): LinearReference | null {
 
   if (!url.hostname.endsWith("linear.app")) return null;
   if (keyMatch) {
-    return { kind: "url", lookup: keyMatch[1]!, display: keyMatch[1]! };
+    return { kind: "url", lookup: keyMatch[1], display: keyMatch[1] };
   }
 
   const slug = url.pathname.split("/").filter(Boolean).at(-1);
@@ -187,7 +187,10 @@ export function createLinearProvider(options: LinearProviderOptions = {}): Issue
             "Content-Type": "application/json",
             Authorization: apiKey,
           },
-          body: JSON.stringify({ query: ISSUE_QUERY, variables: { id: parsed.lookup } }),
+          body: JSON.stringify({
+            query: ISSUE_QUERY,
+            variables: { id: parsed.lookup },
+          }),
           signal,
         });
       } catch (error) {

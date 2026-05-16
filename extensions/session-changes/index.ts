@@ -319,7 +319,8 @@ export default function sessionChangesExtension(pi: ExtensionAPI): void {
 
   pi.on("tool_result", async (event, ctx) => {
     const toolChanged = applyToolResult(state, ctx.cwd, event);
-    const shouldCheckGit = event.isError !== true && ["bash", "edit", "write"].includes(event.toolName);
+    const shouldCheckGit =
+      event.isError !== true && ["bash", "edit", "write"].includes(event.toolName);
     const gitChanged = shouldCheckGit ? await refreshGitStatus(pi, state, ctx.cwd) : false;
     if (toolChanged || gitChanged) refresh();
   });

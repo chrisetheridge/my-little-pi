@@ -217,7 +217,12 @@ export function extractFindingsBlock(output: string): ParsedFindings {
     throw new Error("Missing ```review-findings fenced block.");
   }
 
-  const parsed: unknown = JSON.parse(match[1]!);
+  const block = match[1];
+  if (block === undefined) {
+    throw new Error("Missing review-findings JSON content.");
+  }
+
+  const parsed: unknown = JSON.parse(block);
   if (!isObject(parsed)) {
     throw new Error("review-findings JSON must be an object.");
   }

@@ -4,8 +4,8 @@
 
 import type { ThemeColor } from "@mariozechner/pi-coding-agent";
 import { truncateToWidth } from "@mariozechner/pi-tui";
-import type { IconSet } from "./icons.ts";
 import { formatCost, formatPathBasename, formatTokens, sanitizeStatusText } from "./format.ts";
+import type { IconSet } from "./icons.ts";
 import { formatModelDisplay } from "./model-name.ts";
 
 export interface ThemeFn {
@@ -50,7 +50,20 @@ const THINKING_COLORS: Record<string, ThemeColor> = {
   xhigh: "error",
 };
 
-const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
 
 /** Render model segment. Returns null if modelId is empty/undefined. */
 export function renderModel(theme: ThemeFn, modelId: string | undefined): string | null {
@@ -176,10 +189,7 @@ function renderQuotaWindow(theme: ThemeFn, window: QuotaWindowInput): string | n
 }
 
 /** Render quota usage segment. Returns null if usage is unavailable. */
-export function renderQuota(
-  theme: ThemeFn,
-  input: QuotaSegmentInput | null,
-): string | null {
+export function renderQuota(theme: ThemeFn, input: QuotaSegmentInput | null): string | null {
   if (!input) {
     return null;
   }

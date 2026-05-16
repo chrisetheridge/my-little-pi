@@ -2,19 +2,19 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
-  getAgentDir,
   type ExtensionAPI,
   type ExtensionContext,
+  getAgentDir,
   type Theme,
 } from "@mariozechner/pi-coding-agent";
 import {
+  type Component,
   Key,
   matchesKey,
   Text,
   truncateToWidth,
   visibleWidth,
   wrapTextWithAnsi,
-  type Component,
 } from "@mariozechner/pi-tui";
 
 interface DowntimeFileConfig {
@@ -68,7 +68,7 @@ interface DowntimeState {
 
 type DowntimeOverlayResult = "continue" | "escape";
 
-const DEFAULT_CONFIG: DowntimeFileConfig = {
+const DEFAULT_CONFIG = {
   enabled: false,
   time: "22:00",
   durationMinutes: 8 * 60,
@@ -76,7 +76,7 @@ const DEFAULT_CONFIG: DowntimeFileConfig = {
   message:
     "Downtime is active. Pause work unless you intentionally continue with the confirmation command.",
   statusLabel: "downtime",
-};
+} satisfies Required<DowntimeFileConfig>;
 
 const GLOBAL_CONFIG_PATH = join(getAgentDir(), "extensions", "downtime.json");
 const PROJECT_CONFIG_FILE = join(".pi", "extensions", "downtime.json");
@@ -103,7 +103,10 @@ function readJsonFile<T>(path: string): T | undefined {
   }
 }
 
-function loadFileConfig(cwd: string): { config: DowntimeFileConfig; source: string } {
+function loadFileConfig(cwd: string): {
+  config: DowntimeFileConfig;
+  source: string;
+} {
   const globalConfig = readJsonFile<DowntimeFileConfig>(GLOBAL_CONFIG_PATH) ?? {};
   const projectConfig = readJsonFile<DowntimeFileConfig>(join(cwd, PROJECT_CONFIG_FILE)) ?? {};
   return {
@@ -123,6 +126,14 @@ function parseTimeOfDay(time: string): number | undefined {
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return undefined;
   return hour * 60 + minute;
 }
+
+function parseDefaultTimeOfDay(time: string): number {
+  const parsed = parseTimeOfDay(time);
+  if (parsed === undefined) throw new Error(`Invalid default downtime time: ${time}`);
+  return parsed;
+}
+
+const DEFAULT_TIME_MINUTES = parseDefaultTimeOfDay(DEFAULT_CONFIG.time);
 
 function parseDurationMinutes(value: number | string | undefined): number | undefined {
   if (value === undefined) return undefined;
@@ -151,26 +162,26 @@ function addMinutes(base: Date, minutes: number): Date {
 
 function loadDowntimeConfig(pi: ExtensionAPI, cwd: string): DowntimeConfig {
   const fileConfig = loadFileConfig(cwd);
-  const enabled = fileConfig.config.enabled ?? DEFAULT_CONFIG.enabled ?? false;
+  const enabled = fileConfig.config.enabled ?? DEFAULT_CONFIG.enabled;
   const flaggedTime = pi.getFlag(DOWNTIME_FLAG_NAME);
   const time =
     typeof flaggedTime === "string" && flaggedTime.trim()
       ? flaggedTime.trim()
-      : (fileConfig.config.time ?? DEFAULT_CONFIG.time!);
+      : (fileConfig.config.time ?? DEFAULT_CONFIG.time);
   const durationMinutes =
-    parseDurationMinutes(fileConfig.config.durationMinutes) ??
-    (DEFAULT_CONFIG.durationMinutes as number);
+    parseDurationMinutes(fileConfig.config.durationMinutes) ?? DEFAULT_CONFIG.durationMinutes;
   const timeMinutes = parseTimeOfDay(time);
   if (timeMinutes === undefined) {
-    const fallbackTime = DEFAULT_CONFIG.time as string;
+    const fallbackTime = DEFAULT_CONFIG.time;
     return {
       enabled,
       time: fallbackTime,
-      timeMinutes: parseTimeOfDay(fallbackTime)!,
-      durationMinutes: parseDurationMinutes(DEFAULT_CONFIG.durationMinutes) ?? 480,
-      confirmCommand: (fileConfig.config.confirmCommand ?? DEFAULT_CONFIG.confirmCommand) as string,
-      message: (fileConfig.config.message ?? DEFAULT_CONFIG.message) as string,
-      statusLabel: (fileConfig.config.statusLabel ?? DEFAULT_CONFIG.statusLabel) as string,
+      timeMinutes: DEFAULT_TIME_MINUTES,
+      durationMinutes:
+        parseDurationMinutes(DEFAULT_CONFIG.durationMinutes) ?? DEFAULT_CONFIG.durationMinutes,
+      confirmCommand: fileConfig.config.confirmCommand ?? DEFAULT_CONFIG.confirmCommand,
+      message: fileConfig.config.message ?? DEFAULT_CONFIG.message,
+      statusLabel: fileConfig.config.statusLabel ?? DEFAULT_CONFIG.statusLabel,
       configSource: fileConfig.source,
     };
   }
@@ -180,9 +191,9 @@ function loadDowntimeConfig(pi: ExtensionAPI, cwd: string): DowntimeConfig {
     time,
     timeMinutes,
     durationMinutes,
-    confirmCommand: (fileConfig.config.confirmCommand ?? DEFAULT_CONFIG.confirmCommand) as string,
-    message: (fileConfig.config.message ?? DEFAULT_CONFIG.message) as string,
-    statusLabel: (fileConfig.config.statusLabel ?? DEFAULT_CONFIG.statusLabel) as string,
+    confirmCommand: fileConfig.config.confirmCommand ?? DEFAULT_CONFIG.confirmCommand,
+    message: fileConfig.config.message ?? DEFAULT_CONFIG.message,
+    statusLabel: fileConfig.config.statusLabel ?? DEFAULT_CONFIG.statusLabel,
     configSource: fileConfig.source,
   };
 }
@@ -221,12 +232,22 @@ function isConfirmationCommand(command: string, confirmCommand: string): boolean
   return buildConfirmationMatcher(confirmCommand).test(command);
 }
 
-function loadConfirmedWindowKey(entries: Array<any>): string | null {
+function loadConfirmedWindowKey(entries: unknown[]): string | null {
   for (let i = entries.length - 1; i >= 0; i--) {
     const entry = entries[i];
-    if (!entry || entry.type !== "custom" || entry.customType !== DOWNTIME_CUSTOM_ENTRY_TYPE)
+    if (typeof entry !== "object" || entry === null) continue;
+    if (
+      !("type" in entry) ||
+      entry.type !== "custom" ||
+      !("customType" in entry) ||
+      entry.customType !== DOWNTIME_CUSTOM_ENTRY_TYPE
+    )
       continue;
-    const confirmedWindowKey = entry.data?.confirmedWindowKey;
+    const data = "data" in entry ? entry.data : undefined;
+    const confirmedWindowKey =
+      typeof data === "object" && data !== null && "confirmedWindowKey" in data
+        ? data.confirmedWindowKey
+        : undefined;
     if (typeof confirmedWindowKey === "string" && confirmedWindowKey.trim()) {
       return confirmedWindowKey;
     }
@@ -440,7 +461,7 @@ class DowntimeOverlayDialog implements Component {
       this.selected === 0
         ? this.theme.fg("success", "[ Accept and continue ]")
         : "[ Accept and continue ]";
-    const escape =
+    const escapeAction =
       this.selected === 1
         ? this.theme.fg("warning", "[ Escape and pause downtime ]")
         : "[ Escape and pause downtime ]";
@@ -454,7 +475,7 @@ class DowntimeOverlayDialog implements Component {
       }
       push();
     }
-    push(`${accept}  ${escape}`);
+    push(`${accept}  ${escapeAction}`);
     lines.push(`+${"-".repeat(boxWidth - 2)}+`);
 
     this.cachedWidth = width;
@@ -481,7 +502,9 @@ function confirmDowntimeWindow(
   state.announcedWindowKey = window.key;
   state.wasActive = true;
   if (persist) {
-    pi.appendEntry(DOWNTIME_CUSTOM_ENTRY_TYPE, { confirmedWindowKey: window.key });
+    pi.appendEntry(DOWNTIME_CUSTOM_ENTRY_TYPE, {
+      confirmedWindowKey: window.key,
+    });
   }
   if (ctx.hasUI) {
     ctx.ui.notify("Downtime confirmed for this window.", "info");
@@ -558,16 +581,15 @@ function registerRenderer(pi: ExtensionAPI): void {
     const active = details?.active ?? false;
     const confirmed = details?.confirmed ?? false;
     const kind = details?.kind ?? "status";
-    const color =
-      !enabled
-        ? "muted"
-        : kind === "ended"
+    const color = !enabled
+      ? "muted"
+      : kind === "ended"
+        ? "success"
+        : confirmed
           ? "success"
-          : confirmed
-            ? "success"
-            : active
-              ? "warning"
-              : "muted";
+          : active
+            ? "warning"
+            : "muted";
     let text = theme.fg(
       color,
       kind === "ended"

@@ -4,7 +4,6 @@ import type {
   FocusedIssueState,
   IssueProvider,
   IssueProviderError,
-  IssueProviderId,
 } from "./types.ts";
 
 export interface FocusedIssueControllerOptions {

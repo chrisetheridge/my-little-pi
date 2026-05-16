@@ -2,14 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import {
-  getAgentDir,
   type BeforeAgentStartEventResult,
   type ExtensionAPI,
   type ExtensionContext,
+  getAgentDir,
 } from "@mariozechner/pi-coding-agent";
-
-import { extractIssueReference } from "./providers.ts";
-import { createLinearProvider } from "./providers/linear.ts";
 import {
   buildFocusedIssueMessage,
   formatFocusedIssueContext,
@@ -17,6 +14,8 @@ import {
   shouldInjectPending,
   shouldInjectReady,
 } from "./prompt.ts";
+import { createLinearProvider } from "./providers/linear.ts";
+import { extractIssueReference } from "./providers.ts";
 import { FocusedIssueController, restoreFocusedIssueSnapshot } from "./state.ts";
 import {
   FOCUSED_ISSUE_STATE_TYPE,

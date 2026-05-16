@@ -77,7 +77,9 @@ function getPorcelainEntries(cwd: string, runner = defaultCommandRunner): Porcel
   const entries: PorcelainEntry[] = [];
 
   for (let i = 0; i < parts.length; i += 1) {
-    const part = parts[i]!;
+    const part = parts[i];
+    if (part === undefined) continue;
+
     const status = part.slice(0, 2);
     const path = part.slice(3);
     const entry: PorcelainEntry = { status, path };

@@ -12,9 +12,13 @@
   ],
   "scripts": {
     "check": "tsc --noEmit",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
     "test": "vitest run",
     "pack:dry-run": "npm pack --dry-run",
-    "ci": "pnpm run check && pnpm run test && pnpm run pack:dry-run"
+    "ci": "pnpm run check && pnpm run test && pnpm run pack:dry-run",
+    "prepare": "husky"
   },
   "files": [
     "extensions",
@@ -61,13 +65,15 @@
     }
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.14",
     "@eslint/js": "^10.0.1",
     "@mariozechner/pi-agent-core": "latest",
     "@mariozechner/pi-coding-agent": "latest",
     "@mariozechner/pi-tui": "latest",
-    "@biomejs/biome": "^2.4.14",
     "globals": "^17.6.0",
+    "husky": "^9.1.7",
     "jiti": "^2.6.1",
+    "lint-staged": "^17.0.5",
     "typebox": "latest",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.59.2",

@@ -1,5 +1,11 @@
 import type { ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, visibleWidth, type Component } from "@mariozechner/pi-tui";
+import {
+  type Component,
+  Key,
+  matchesKey,
+  truncateToWidth,
+  visibleWidth,
+} from "@mariozechner/pi-tui";
 import { LandingWorkflowRunner } from "./runner.ts";
 import type {
   ConfigLoadResult,
@@ -11,7 +17,6 @@ import type {
 
 const CHECK = "✓";
 const CROSS = "✗";
-const RUN = "▶";
 const WAIT = "·";
 const CANCEL = "■";
 
@@ -44,11 +49,15 @@ export class LandingWorkflowComponent implements Component {
     const safeWidth = Math.max(48, width);
     const innerWidth = Math.max(44, safeWidth - 4);
     const lines = this.renderPanel(innerWidth);
-    return box(lines, innerWidth, this.options.theme).map((line) => fit(line, safeWidth));
+    return box(lines, innerWidth, this.options.theme).map((line) => fitLine(line, safeWidth));
   }
 
   handleInput(data: string): void {
-    if (matchesKey(data, Key.enter) && this.state.status === "idle" && this.options.configResult.ok) {
+    if (
+      matchesKey(data, Key.enter) &&
+      this.state.status === "idle" &&
+      this.options.configResult.ok
+    ) {
       this.start();
       return;
     }
@@ -72,8 +81,12 @@ export class LandingWorkflowComponent implements Component {
 
   start(): void {
     if (!this.options.configResult.ok || this.state.status !== "idle") return;
-    const factory = this.options.runnerFactory ?? ((config, cwd, onEvent) => new LandingWorkflowRunner(config, cwd, onEvent));
-    this.runner = factory(this.options.configResult.config, this.options.cwd, (event) => this.applyEvent(event));
+    const factory =
+      this.options.runnerFactory ??
+      ((config, cwd, onEvent) => new LandingWorkflowRunner(config, cwd, onEvent));
+    this.runner = factory(this.options.configResult.config, this.options.cwd, (event) =>
+      this.applyEvent(event),
+    );
     this.timer = setInterval(() => this.requestRender(), 120);
     void this.runner.run().finally(() => {
       if (this.timer && this.state.status !== "running") {
@@ -98,7 +111,8 @@ export class LandingWorkflowComponent implements Component {
         break;
       case "output":
         this.state.output.push(...event.text.split(/(?<=\n)/));
-        if (this.state.output.length > 1000) this.state.output.splice(0, this.state.output.length - 1000);
+        if (this.state.output.length > 1000)
+          this.state.output.splice(0, this.state.output.length - 1000);
         break;
       case "step-success":
         this.state.steps[event.index].status = "success";
@@ -137,27 +151,41 @@ export class LandingWorkflowComponent implements Component {
 
   private renderPanel(width: number): string[] {
     const lines: string[] = [];
-    lines.push(this.options.theme.fg("accent", "Landing Workflow"));
+    lines.push(this.options.theme.fg("accent", "Land"));
     lines.push(`Current status: ${this.statusText(this.state.status)}`);
-    lines.push(center(`Landing Workflow  •  Status: ${this.state.status.toUpperCase()}  •  Elapsed: ${formatMs(elapsed(this.state, this.now()))}`, width));
+    lines.push(
+      center(
+        `Land  •  Status: ${this.state.status.toUpperCase()}  •  Elapsed: ${formatMs(elapsed(this.state, this.now()))}`,
+        width,
+      ),
+    );
     lines.push("");
 
     if (this.options.configResult.ok) {
-      lines.push(this.options.theme.fg("dim", fit(`Config: ${this.options.configResult.source}`, width)));
+      lines.push(
+        this.options.theme.fg("dim", fitLine(`Config: ${this.options.configResult.source}`, width)),
+      );
     } else {
       lines.push(this.options.theme.fg("error", "Config missing or invalid"));
       lines.push(...wrap(this.options.configResult.error, width));
-      lines.push(fit(`Expected: ${this.options.configResult.expectedProjectPath}`, width));
+      lines.push(fitLine(`Expected: ${this.options.configResult.expectedProjectPath}`, width));
     }
     lines.push("");
-    lines.push(`${this.options.theme.fg("dim", "Workflow progress")} ${progressBar(completedCount(this.state.steps), this.state.steps.length, Math.max(10, width - 20))}`);
+    lines.push(
+      `${this.options.theme.fg("dim", "Workflow progress")} ${progressBar(completedCount(this.state.steps), this.state.steps.length, Math.max(10, width - 20))}`,
+    );
     lines.push("");
     lines.push(this.options.theme.fg("accent", `Current step: ${this.currentStepSummary()}`));
     lines.push("");
     lines.push(this.options.theme.fg("accent", "Steps:"));
     lines.push("");
     for (const step of this.state.steps) {
-      lines.push(fit(`${icon(step.status, this.now())} ${step.step.label} ${this.stepStatusText(step)}`, width));
+      lines.push(
+        fitLine(
+          `${icon(step.status, this.now())} ${step.step.label} ${this.stepStatusText(step)}`,
+          width,
+        ),
+      );
     }
 
     if (this.state.output.length > 0) {
@@ -169,7 +197,7 @@ export class LandingWorkflowComponent implements Component {
 
     lines.push("");
     lines.push(this.options.theme.fg("dim", this.footer()));
-    return lines.map((line) => fit(line, width));
+    return lines.map((line) => fitLine(line, width));
   }
 
   private currentStepSummary(): string {
@@ -194,38 +222,52 @@ export class LandingWorkflowComponent implements Component {
   }
 
   private footer(): string {
-    if (this.state.status === "idle") return this.options.configResult.ok ? "Enter Start · Esc Cancel" : "Start disabled · Esc Close";
+    if (this.state.status === "idle")
+      return this.options.configResult.ok
+        ? "Enter Start · Esc Cancel"
+        : "Start disabled · Esc Close";
     if (this.state.status === "running") return "Esc Cancel";
     return "Esc Close";
   }
 }
 
-export async function showLandingWorkflow(ctx: ExtensionCommandContext, configResult: ConfigLoadResult): Promise<void> {
+export async function showLandingWorkflow(
+  ctx: ExtensionCommandContext,
+  configResult: ConfigLoadResult,
+): Promise<void> {
   let component: LandingWorkflowComponent | undefined;
-  await ctx.ui.custom<void>((tui, theme, _keybindings, done) => {
-    component = new LandingWorkflowComponent({
-      configResult,
-      cwd: ctx.cwd,
-      theme,
-      done: () => done(),
-      requestRender: () => tui.requestRender(),
-    });
-    return component;
-  }, {
-    overlay: true,
-    overlayOptions: {
-      anchor: "center",
-      width: "65%",
-      minWidth: 72,
-      maxHeight: "82%",
-      margin: 1,
+  await ctx.ui.custom<void>(
+    (tui, theme, _keybindings, done) => {
+      component = new LandingWorkflowComponent({
+        configResult,
+        cwd: ctx.cwd,
+        theme,
+        done: () => done(),
+        requestRender: () => tui.requestRender(),
+      });
+      return component;
     },
-  });
+    {
+      overlay: true,
+      overlayOptions: {
+        anchor: "center",
+        width: "65%",
+        minWidth: 72,
+        maxHeight: "82%",
+        margin: 1,
+      },
+    },
+  );
   component?.dispose();
 }
 
 function initialState(configResult: ConfigLoadResult): WorkflowRunState {
-  const steps = configResult.ok ? configResult.config.steps.map((step) => ({ step, status: "pending" as const })) : [];
+  const steps = configResult.ok
+    ? configResult.config.steps.map((step) => ({
+        step,
+        status: "pending" as const,
+      }))
+    : [];
   return { status: "idle", steps, output: [] };
 }
 
@@ -261,7 +303,7 @@ function box(lines: string[], width: number, theme: Theme): string[] {
 }
 
 function center(text: string, width: number): string {
-  const fitted = fit(text, width);
+  const fitted = fitLine(text, width);
   const left = Math.max(0, Math.floor((width - visibleWidth(fitted)) / 2));
   return `${" ".repeat(left)}${fitted}`;
 }
@@ -284,10 +326,6 @@ function icon(status: string, now: number): string {
   return WAIT;
 }
 
-function rule(width: number): string {
-  return "─".repeat(Math.max(1, width));
-}
-
 function wrap(text: string, width: number): string[] {
   const normalized = text.length ? text : "";
   const lines: string[] = [];
@@ -300,11 +338,11 @@ function wrap(text: string, width: number): string[] {
   return lines.length ? lines : [""];
 }
 
-function fit(text: string, width: number): string {
+function fitLine(text: string, width: number): string {
   return visibleWidth(text) <= width ? text : truncateToWidth(text, width);
 }
 
 function pad(text: string, width: number): string {
-  const fitted = fit(text, width);
+  const fitted = fitLine(text, width);
   return `${fitted}${" ".repeat(Math.max(0, width - visibleWidth(fitted)))}`;
 }

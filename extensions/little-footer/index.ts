@@ -3,17 +3,17 @@
  */
 
 import { spawnSync } from "node:child_process";
-
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type {
   ExtensionAPI,
   ExtensionContext,
   ReadonlyFooterDataProvider,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import { iconsFor, type IconSet } from "./icons.ts";
 import { createCodexQuotaTracker, type QuotaTracker } from "./codex-usage.ts";
+import { type IconSet, iconsFor } from "./icons.ts";
 import {
+  type GitDiffStats,
   renderCost,
   renderExtensionStatus,
   renderGit,
@@ -23,7 +23,6 @@ import {
   renderThinking,
   renderTime,
   renderTokens,
-  type GitDiffStats,
   type ThemeFn,
 } from "./segments.ts";
 
@@ -151,7 +150,7 @@ function isOpenAICodexModel(model: { id?: string; provider?: string } | undefine
   if (!model) return false;
   const providerValue =
     model.provider ??
-    (model.id && model.id.includes("/") ? model.id.slice(0, model.id.indexOf("/")) : undefined);
+    (model.id?.includes("/") ? model.id.slice(0, model.id.indexOf("/")) : undefined);
   if (!providerValue) return false;
   const provider = providerValue.toLowerCase();
   return provider === "openai-codex" || /^openai-codex-\d+$/.test(provider);

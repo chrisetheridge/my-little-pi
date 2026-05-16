@@ -1,7 +1,9 @@
-import { type ExtensionCommandContext, type Theme } from "@mariozechner/pi-coding-agent";
+import type { ExtensionCommandContext, Theme } from "@mariozechner/pi-coding-agent";
 import {
   Box,
+  type Component,
   Container,
+  type Focusable,
   Input,
   Key,
   matchesKey,
@@ -9,16 +11,14 @@ import {
   Text,
   truncateToWidth,
   visibleWidth,
-  type Component,
-  type Focusable,
 } from "@mariozechner/pi-tui";
 import { loadSourceExcerpt } from "./findings.ts";
 import type { ReviewTarget } from "./git.ts";
 import {
   discardFinding,
+  type ReviewRunState,
   updateFindingNote,
   updateReviewIndex,
-  type ReviewRunState,
 } from "./state.ts";
 
 const FINDINGS_VIEWPORT_LINES = 11;
@@ -354,7 +354,12 @@ export class FindingsDialog {
       return content;
     }
 
-    const finding = this.state.findings[this.state.currentIndex]!;
+    const finding = this.state.findings[this.state.currentIndex];
+    if (!finding) {
+      content.addChild(new Text("No finding selected.", 0, 0));
+      return content;
+    }
+
     const excerpt = loadSourceExcerpt(this.cwd, finding);
     const status = "FIX";
 
