@@ -22,7 +22,7 @@ const quotaTrackerMock = vi.hoisted(() => ({
   dispose: vi.fn(),
 }));
 
-vi.mock("../../../extensions/little-footer/codex-usage.ts", () => ({
+vi.mock("#extensions/little-footer/codex-usage.ts", () => ({
   createCodexQuotaTracker: () => ({
     setEnabled: quotaTrackerMock.setEnabled,
     getSnapshot: () => quotaTrackerMock.snapshot,
@@ -137,7 +137,7 @@ async function loadExtension(): Promise<LoadedExtension> {
   };
 
   const pi = loadPi();
-  const { default: littleFooterExtension } = await import("../../../extensions/little-footer/index.ts");
+  const { default: littleFooterExtension } = await import("#extensions/little-footer/index.ts");
   littleFooterExtension(pi as never);
 
   return { commands, handlers };

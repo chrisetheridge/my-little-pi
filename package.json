@@ -4,6 +4,9 @@
   "description": "Personal Pi package for extensions, skills, and themes.",
   "type": "module",
   "private": true,
+  "imports": {
+    "#extensions/*": "./extensions/*"
+  },
   "keywords": [
     "pi-package",
     "pi-extension",

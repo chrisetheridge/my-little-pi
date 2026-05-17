@@ -10,7 +10,7 @@ import {
   parseGitStatusPorcelain,
   rebuildFromSessionEntries,
   SessionChangesWidget,
-} from "../../../extensions/session-changes/index.ts";
+} from "#extensions/session-changes/index.ts";
 
 describe("session-changes extension", () => {
   it("normalizes tool paths relative to cwd", () => {
@@ -187,7 +187,7 @@ describe("session-changes extension", () => {
     const pi = {
       on: vi.fn((event: string, handler: any) => handlers.set(event, handler)),
     };
-    const { default: extension } = await import("../../../extensions/session-changes/index.ts");
+    const { default: extension } = await import("#extensions/session-changes/index.ts");
     extension(pi as never);
 
     let widgetFactory: any;
@@ -226,7 +226,7 @@ describe("session-changes extension", () => {
       on: vi.fn((event: string, handler: any) => handlers.set(event, handler)),
       exec: vi.fn(async () => ({ code: 0, stdout: "?? src/from-bash.ts\n", stderr: "" })),
     };
-    const { default: extension } = await import("../../../extensions/session-changes/index.ts");
+    const { default: extension } = await import("#extensions/session-changes/index.ts");
     extension(pi as never);
 
     const requestRender = vi.fn();

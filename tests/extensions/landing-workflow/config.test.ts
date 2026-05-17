@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   loadLandingWorkflowConfig,
   validateLandingWorkflowConfig,
-} from "../../../extensions/land/config.ts";
+} from "#extensions/land/config.ts";
 
 function dirs(): {
   cwd: string;
