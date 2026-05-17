@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { LandingWorkflowComponent } from "../../../extensions/land/ui.ts";
+import { LandingWorkflowComponent } from "#extensions/land/ui.ts";
 import type {
   LandingWorkflowConfig,
   RunnerEvent,
-} from "../../../extensions/land/types.ts";
+} from "#extensions/land/types.ts";
 
 const theme = {
   fg: (_name: string, text: string) => text,

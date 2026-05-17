@@ -200,7 +200,6 @@ Themes hot-reload when the active theme file changes.
       "./extensions/little-renderer/index.ts",
       "./extensions/review/index.ts",
       "./extensions/little-spinner/index.ts",
-      "./extensions/focused-issue/index.ts",
       "./extensions/session-changes/index.ts",
       "./extensions/startup-screen/index.ts",
       "./extensions/land/index.ts"

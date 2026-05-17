@@ -42,7 +42,7 @@ describe("createCodexQuotaTracker", () => {
     }), { status: 200 }));
     globalThis.fetch = fetchMock;
 
-    const { createCodexQuotaTracker } = await import("../../../extensions/little-footer/codex-usage.ts");
+    const { createCodexQuotaTracker } = await import("#extensions/little-footer/codex-usage.ts");
     const onUpdate = vi.fn();
     const ctx = {
       model: { id: "codex-2", provider: "openai-codex" },

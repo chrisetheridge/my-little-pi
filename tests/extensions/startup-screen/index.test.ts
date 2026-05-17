@@ -55,7 +55,7 @@ describe("startup-screen extension", () => {
       on: vi.fn((event: string, handler: any) => handlers.set(event, handler)),
       registerCommand: vi.fn((name: string, options: any) => commands.set(name, options)),
     };
-    const { default: extension } = await import("../../../extensions/startup-screen/index.ts");
+    const { default: extension } = await import("#extensions/startup-screen/index.ts");
 
     extension(pi as never);
     await handlers.get("session_start")?.({}, ctx);

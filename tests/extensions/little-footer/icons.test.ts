@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { iconsFor } from "../../../extensions/little-footer/icons.ts";
+import { iconsFor } from "#extensions/little-footer/icons.ts";
 
 describe("iconsFor", () => {
   it("returns all required keys", () => {
