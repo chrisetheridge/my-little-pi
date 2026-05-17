@@ -15,7 +15,6 @@ Use this file to route repo reading before editing.
 - Read `AGENTS.md` before editing extensions because Pi auto-discovers runtime files.
 - Extension-specific docs:
   - `extensions/downtime/README.md`
-  - `extensions/focused-issue/README.md`
   - `extensions/review/README.md`
 
 ## Skills
