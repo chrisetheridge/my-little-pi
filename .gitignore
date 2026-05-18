@@ -3,3 +3,7 @@ docs/plans/*
 node_modules/
 *.tgz
 .DS_Store
+.pi/*
+!.pi/extensions/
+.pi/extensions/*
+!.pi/extensions/land.json

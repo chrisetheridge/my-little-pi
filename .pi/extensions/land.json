@@ -2,6 +2,11 @@
   "steps": [
     {
       "type": "shell",
+      "label": "Lint",
+      "command": "pnpm run lint"
+    },
+    {
+      "type": "shell",
       "label": "Check",
       "command": "pnpm run check"
     },
@@ -9,6 +14,11 @@
       "type": "shell",
       "label": "Test",
       "command": "pnpm run test"
+    },
+    {
+      "type": "shell",
+      "label": "Pack dry run",
+      "command": "pnpm run pack:dry-run"
     },
     {
       "type": "commit",
